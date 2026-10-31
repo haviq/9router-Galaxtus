@@ -4,12 +4,26 @@
 
   let canvasEl: HTMLCanvasElement | undefined = $state()
   let containerEl: HTMLDivElement | undefined = $state()
+
+  // Parallax Anchors (Driven by 3D Scroll Zoom & Parallax Drift)
+  let planetGasGiantAnchor: HTMLDivElement | undefined = $state()
+  let planetSaturnAnchor: HTMLDivElement | undefined = $state()
+  let planetExoEarthAnchor: HTMLDivElement | undefined = $state()
+  let planetCrimsonAnchor: HTMLDivElement | undefined = $state()
+  let andromedaAnchor: HTMLDivElement | undefined = $state()
+  let blackHoleAnchor: HTMLDivElement | undefined = $state()
+  let sombreroAnchor: HTMLDivElement | undefined = $state()
+  let asteroidsAnchor: HTMLDivElement | undefined = $state()
+
+  // Inner Elements (Driven by Continuous GSAP Orbital Floating)
   let planetGasGiantEl: HTMLDivElement | undefined = $state()
   let planetSaturnEl: HTMLDivElement | undefined = $state()
   let planetExoEarthEl: HTMLDivElement | undefined = $state()
   let planetCrimsonEl: HTMLDivElement | undefined = $state()
   let moonOrbitEl: HTMLDivElement | undefined = $state()
   let andromedaEl: HTMLDivElement | undefined = $state()
+  let blackHoleEl: HTMLDivElement | undefined = $state()
+  let sombreroEl: HTMLDivElement | undefined = $state()
 
   onMount(() => {
     const reduced =
@@ -17,7 +31,6 @@
       document.documentElement.getAttribute('data-anim-level') === 'off'
 
     // 1. Offscreen-Cached Starfield + Twinkling Flare Stars + Shooting Meteors
-    //    Static stars are rendered ONCE to an offscreen canvas so per-frame GPU cost is near zero.
     let animId = 0
     const canvas = canvasEl
     if (canvas) {
@@ -44,7 +57,7 @@
       const darkPalette = ['#ffffff', '#e0f2fe', '#ddd6fe', '#fef3c7', '#fbcfe8', '#bae6fd']
       const lightPalette = ['#4338ca', '#6366f1', '#7c3aed', '#0284c7', '#ea580c', '#db2777', '#2563eb']
 
-      const allStars: Star[] = Array.from({ length: 340 }, (_, i) => {
+      const allStars: Star[] = Array.from({ length: 360 }, (_, i) => {
         const inBand = i % 5 < 2
         let nx = ((i * 7919 + 104729) % 10000) / 10000
         let ny = ((i * 15485863 + 32452843) % 10000) / 10000
@@ -217,9 +230,110 @@
       render()
     }
 
+    // 2. High-Performance 3D Parallax Scroll & Smooth Cinematic Zoom Engine
+    let targetScroll = 0
+    let currentScroll = 0
+    let parallaxRafId = 0
+
+    const updateScroll = () => {
+      const mainEl = document.querySelector('main')
+      const mainScroll = mainEl ? mainEl.scrollTop : 0
+      const winScroll = window.scrollY || document.documentElement.scrollTop || 0
+      targetScroll = Math.max(mainScroll, winScroll)
+    }
+
+    const onScroll = () => {
+      updateScroll()
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    const mainEl = document.querySelector('main')
+    if (mainEl) {
+      mainEl.addEventListener('scroll', onScroll, { passive: true })
+    }
+
+    const bodyObserver = new MutationObserver(() => {
+      const curMain = document.querySelector('main')
+      if (curMain && curMain !== mainEl) {
+        curMain.addEventListener('scroll', onScroll, { passive: true })
+      }
+    })
+    bodyObserver.observe(document.body, { childList: true, subtree: true })
+
+    const renderParallax = () => {
+      if (!reduced) {
+        currentScroll += (targetScroll - currentScroll) * 0.085
+        const norm = Math.min(2.0, currentScroll / 450)
+
+        // 1. Gas Giant (Foreground Supergiant): aggressive 3D push-in zoom (+48%) + downward drift
+        if (planetGasGiantAnchor) {
+          const scale = 1 + norm * 0.48
+          const x = -norm * 45
+          const y = norm * 90
+          planetGasGiantAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 2. Saturn (Bottom-Left Ringed Giant): zooms (+42%) and glides upward into view
+        if (planetSaturnAnchor) {
+          const scale = 1 + norm * 0.42
+          const x = norm * 40
+          const y = -norm * 85
+          planetSaturnAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 3. Exo-Earth (Oceanic Jewel): zooms (+38%) and floats upward with majestic presence
+        if (planetExoEarthAnchor) {
+          const scale = 1 + norm * 0.38
+          const x = -norm * 35
+          const y = -norm * 75
+          planetExoEarthAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 4. Crimson Dwarf World: zooms (+34%) and pans diagonally
+        if (planetCrimsonAnchor) {
+          const scale = 1 + norm * 0.34
+          const x = norm * 35
+          const y = norm * 55
+          planetCrimsonAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 5. Andromeda Galaxy: deep celestial background push (+18%) and subtle drift
+        if (andromedaAnchor) {
+          const scale = 1 + norm * 0.18
+          const y = norm * 40
+          andromedaAnchor.style.transform = `translate3d(0, ${y}px, 0) scale(${scale})`
+        }
+
+        // 6. Gargantua Supermassive Black Hole: zooms (+26%) with warped relativistic shift
+        if (blackHoleAnchor) {
+          const scale = 1 + norm * 0.26
+          const x = -norm * 25
+          const y = norm * 50
+          blackHoleAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 7. Sombrero Galaxy (NGC 4594): zooms (+22%) and drifts
+        if (sombreroAnchor) {
+          const scale = 1 + norm * 0.22
+          const x = norm * 30
+          const y = -norm * 35
+          sombreroAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+        }
+
+        // 8. Asteroid Belt: moves dynamically on parallax plane
+        if (asteroidsAnchor) {
+          const x = -norm * 50
+          const y = -norm * 40
+          asteroidsAnchor.style.transform = `translate3d(${x}px, ${y}px, 0)`
+        }
+      }
+      parallaxRafId = requestAnimationFrame(renderParallax)
+    }
+    renderParallax()
+
     if (reduced) return
 
-    // 2. GSAP Orbital & Floating Choreography for Photorealistic 3D Planets
+    // 3. GSAP Orbital & Floating Choreography for Photorealistic 3D Planets & Deep Space Systems
     const gsapCtx = gsap.context(() => {
       if (planetGasGiantEl) {
         gsap.to(planetGasGiantEl, {
@@ -285,15 +399,37 @@
           force3D: true,
         })
       }
+      if (blackHoleEl) {
+        gsap.to(blackHoleEl, {
+          rotation: -360,
+          duration: 90,
+          repeat: -1,
+          ease: 'none',
+          force3D: true,
+        })
+      }
+      if (sombreroEl) {
+        gsap.to(sombreroEl, {
+          rotation: 3,
+          y: -8,
+          duration: 18,
+          repeat: -1,
+          yoyo: true,
+          ease: 'sine.inOut',
+          force3D: true,
+        })
+      }
     }, containerEl)
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         cancelAnimationFrame(animId)
+        cancelAnimationFrame(parallaxRafId)
         if (gsapCtx && typeof gsapCtx.pause === 'function') gsapCtx.pause()
       } else {
         if (!reduced) {
           animId = requestAnimationFrame(render)
+          parallaxRafId = requestAnimationFrame(renderParallax)
           if (gsapCtx && typeof gsapCtx.resume === 'function') gsapCtx.resume()
         }
       }
@@ -302,8 +438,12 @@
 
     return () => {
       cancelAnimationFrame(animId)
+      cancelAnimationFrame(parallaxRafId)
       themeObserver.disconnect()
+      bodyObserver.disconnect()
       window.removeEventListener('resize', handleResize)
+      window.removeEventListener('scroll', onScroll)
+      if (mainEl) mainEl.removeEventListener('scroll', onScroll)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       gsapCtx.revert()
     }
@@ -323,55 +463,95 @@
   <!-- 2. High-DPI Starfield & Meteor Canvas -->
   <canvas bind:this={canvasEl} class="absolute inset-0 w-full h-full"></canvas>
 
-  <!-- 3. Realistic Spiral Galaxy (Andromeda-style inclined galactic disc) -->
-  <div class="andromeda-System">
+  <!-- 3. GALAXY 1: Realistic Inclined Spiral Galaxy (Andromeda style) -->
+  <div bind:this={andromedaAnchor} class="celestial-anchor andromeda-system">
     <div bind:this={andromedaEl} class="andromeda-disc">
       <div class="andromeda-core"></div>
       <div class="andromeda-arms"></div>
     </div>
   </div>
 
-  <!-- 4. PLANET 1: Photorealistic Galactus Gas Supergiant (Top-Right) -->
-  <div bind:this={planetGasGiantEl} class="planet-anchor planet-gas-giant">
-    <div class="gas-giant-atmosphere"></div>
-    <div class="gas-giant-sphere">
-      <div class="gas-giant-clouds"></div>
-      <div class="gas-giant-terminator"></div>
-      <div class="gas-giant-fresnel"></div>
+  <!-- 4. GALAXY 2: Gargantua Supermassive Black Hole & Gravitational Accretion Ring -->
+  <div bind:this={blackHoleAnchor} class="celestial-anchor black-hole-system">
+    <div bind:this={blackHoleEl} class="black-hole-disc">
+      <div class="black-hole-jet"></div>
+      <div class="accretion-warp-top"></div>
+      <div class="accretion-disc-main"></div>
+      <div class="event-horizon-shadow"></div>
+      <div class="photon-ring-flare"></div>
+      <div class="accretion-warp-bottom"></div>
     </div>
-    <div bind:this={moonOrbitEl} class="gas-giant-moon-orbit">
-      <div class="cratered-moon">
-        <span class="moon-crater c1"></span>
-        <span class="moon-crater c2"></span>
+  </div>
+
+  <!-- 5. GALAXY 3: Sombrero Galaxy (NGC 4594 Edge-On Interstellar Dust Lane Disc) -->
+  <div bind:this={sombreroAnchor} class="celestial-anchor sombrero-system">
+    <div bind:this={sombreroEl} class="sombrero-disc">
+      <div class="sombrero-halo"></div>
+      <div class="sombrero-bulge"></div>
+      <div class="sombrero-dust-disc"></div>
+      <div class="sombrero-dust-line"></div>
+    </div>
+  </div>
+
+  <!-- 6. Floating Asteroid Belt Stream -->
+  <div bind:this={asteroidsAnchor} class="celestial-anchor asteroid-belt-stream">
+    <span class="asteroid ast-1"></span>
+    <span class="asteroid ast-2"></span>
+    <span class="asteroid ast-3"></span>
+    <span class="asteroid ast-4"></span>
+    <span class="asteroid ast-5"></span>
+    <span class="asteroid ast-6"></span>
+  </div>
+
+  <!-- 7. PLANET 1: Photorealistic Galactus Gas Supergiant (Top-Right) -->
+  <div bind:this={planetGasGiantAnchor} class="planet-anchor planet-gas-giant">
+    <div bind:this={planetGasGiantEl} class="planet-inner-orbit">
+      <div class="gas-giant-atmosphere"></div>
+      <div class="gas-giant-sphere">
+        <div class="gas-giant-clouds"></div>
+        <div class="gas-giant-terminator"></div>
+        <div class="gas-giant-fresnel"></div>
+      </div>
+      <div bind:this={moonOrbitEl} class="gas-giant-moon-orbit">
+        <div class="cratered-moon">
+          <span class="moon-crater c1"></span>
+          <span class="moon-crater c2"></span>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 5. PLANET 2: Photorealistic Ringed Saturnian Exoplanet (Bottom-Left) -->
-  <div bind:this={planetSaturnEl} class="planet-anchor planet-saturn">
-    <div class="saturn-ambient-glow"></div>
-    <div class="saturn-rings saturn-rings-back"></div>
-    <div class="saturn-sphere">
-      <div class="saturn-bands"></div>
-      <div class="saturn-terminator"></div>
-    </div>
-    <div class="saturn-rings saturn-rings-front"></div>
-  </div>
-
-  <!-- 6. PLANET 3: Realistic Oceanic Exo-Earth with Atmosphere & Clouds (Bottom-Right) -->
-  <div bind:this={planetExoEarthEl} class="planet-anchor planet-exo-earth">
-    <div class="exo-earth-glow"></div>
-    <div class="exo-earth-sphere">
-      <div class="exo-earth-continents"></div>
-      <div class="exo-earth-clouds"></div>
-      <div class="exo-earth-terminator"></div>
+  <!-- 8. PLANET 2: Photorealistic Ringed Saturnian Exoplanet (Bottom-Left) -->
+  <div bind:this={planetSaturnAnchor} class="planet-anchor planet-saturn">
+    <div bind:this={planetSaturnEl} class="planet-inner-orbit">
+      <div class="saturn-ambient-glow"></div>
+      <div class="saturn-rings saturn-rings-back"></div>
+      <div class="saturn-sphere">
+        <div class="saturn-bands"></div>
+        <div class="saturn-terminator"></div>
+      </div>
+      <div class="saturn-rings saturn-rings-front"></div>
     </div>
   </div>
 
-  <!-- 7. PLANET 4: Magma / Volcanic Dwarf Planet (Upper Left-Center) -->
-  <div bind:this={planetCrimsonEl} class="planet-anchor planet-crimson">
-    <div class="crimson-sphere">
-      <div class="crimson-terminator"></div>
+  <!-- 9. PLANET 3: Realistic Oceanic Exo-Earth with Atmosphere & Clouds (Bottom-Right) -->
+  <div bind:this={planetExoEarthAnchor} class="planet-anchor planet-exo-earth">
+    <div bind:this={planetExoEarthEl} class="planet-inner-orbit">
+      <div class="exo-earth-glow"></div>
+      <div class="exo-earth-sphere">
+        <div class="exo-earth-continents"></div>
+        <div class="exo-earth-clouds"></div>
+        <div class="exo-earth-terminator"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. PLANET 4: Magma / Volcanic Dwarf Planet (Upper Left-Center) -->
+  <div bind:this={planetCrimsonAnchor} class="planet-anchor planet-crimson">
+    <div bind:this={planetCrimsonEl} class="planet-inner-orbit">
+      <div class="crimson-sphere">
+        <div class="crimson-terminator"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -390,26 +570,6 @@
   :global(.light) .galaxy-scene {
     background:
       radial-gradient(ellipse 130% 90% at 50% -10%, #e0e7ff 0%, #ede9fe 25%, #e2e8f0 60%, #cbd5e1 100%);
-  }
-
-  :global(html:not(.dark)) .planet-gas-giant,
-  :global(.light) .planet-gas-giant {
-    filter: saturate(1.25) contrast(1.1);
-  }
-
-  :global(html:not(.dark)) .planet-saturn,
-  :global(.light) .planet-saturn {
-    filter: saturate(1.25) contrast(1.1);
-  }
-
-  :global(html:not(.dark)) .planet-exo-earth,
-  :global(.light) .planet-exo-earth {
-    filter: saturate(1.3) contrast(1.15);
-  }
-
-  :global(html:not(.dark)) .planet-crimson,
-  :global(.light) .planet-crimson {
-    filter: saturate(1.3) contrast(1.1);
   }
 
   /* Volumetric Milky Way diagonal dust lane */
@@ -453,17 +613,38 @@
     mix-blend-mode: multiply;
   }
 
-  /* =========================================================
-   * Realistic Inclined Spiral Galaxy (Andromeda Style)
-   * ========================================================= */
-  .andromeda-System {
+  /* Celestial Anchors (GPU Parallax Transformed) */
+  .celestial-anchor,
+  .planet-anchor {
     position: absolute;
-    top: 28%;
-    left: 44%;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .planet-inner-orbit {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+  }
+
+  /* =========================================================
+   * GALAXY 1: Realistic Inclined Spiral Galaxy (Andromeda Style)
+   * ========================================================= */
+  .andromeda-system {
+    top: 24%;
+    left: 42%;
     width: 420px;
     height: 190px;
     transform: rotate(-26deg) scaleY(0.42) translateZ(0);
     opacity: 0.72;
+    transition: opacity 0.4s ease;
+  }
+
+  :global(html:not(.dark)) .andromeda-system,
+  :global(.light) .andromeda-system {
+    opacity: 0.48;
+    mix-blend-mode: multiply;
   }
 
   .andromeda-disc {
@@ -509,10 +690,218 @@
     filter: blur(12px);
   }
 
-  .planet-anchor {
-    position: absolute;
+  /* =========================================================
+   * GALAXY 2: Gargantua Supermassive Black Hole & Accretion Ring
+   * ========================================================= */
+  .black-hole-system {
+    top: 14%;
+    left: 65%;
+    width: 220px;
+    height: 220px;
+    opacity: 0.85;
+    z-index: 1;
+  }
+
+  :global(html:not(.dark)) .black-hole-system,
+  :global(.light) .black-hole-system {
+    opacity: 0.65;
+    mix-blend-mode: multiply;
+  }
+
+  .black-hole-disc {
+    position: relative;
+    width: 100%;
+    height: 100%;
     will-change: transform;
   }
+
+  /* Gravitationally warped Einstein top ring */
+  .accretion-warp-top {
+    position: absolute;
+    top: 18%;
+    left: 10%;
+    width: 80%;
+    height: 64%;
+    border-radius: 50%;
+    background: radial-gradient(
+      ellipse at 50% 30%,
+      rgba(254, 240, 138, 0.95) 0%,
+      rgba(251, 146, 60, 0.75) 35%,
+      rgba(234, 88, 12, 0.4) 60%,
+      transparent 80%
+    );
+    filter: blur(6px);
+    transform: rotate(-16deg) scaleY(0.72);
+  }
+
+  /* Primary relativistic accretion disk */
+  .accretion-disc-main {
+    position: absolute;
+    top: 36%;
+    left: 0;
+    width: 100%;
+    height: 28%;
+    border-radius: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(254, 215, 170, 0.9) 20%,
+      rgba(251, 146, 60, 0.85) 45%,
+      rgba(194, 65, 12, 0.6) 80%,
+      transparent 100%
+    );
+    filter: blur(4px);
+    transform: rotate(-16deg);
+    box-shadow: 0 0 24px rgba(251, 146, 60, 0.65);
+  }
+
+  /* Pure black event horizon */
+  .event-horizon-shadow {
+    position: absolute;
+    top: 32%;
+    left: 32%;
+    width: 36%;
+    height: 36%;
+    border-radius: 50%;
+    background: #000000;
+    box-shadow:
+      inset 0 0 12px rgba(0, 0, 0, 1),
+      0 0 10px rgba(0, 0, 0, 0.9);
+    z-index: 2;
+  }
+
+  /* Thin photon ring around the event horizon */
+  .photon-ring-flare {
+    position: absolute;
+    top: 30%;
+    left: 30%;
+    width: 40%;
+    height: 40%;
+    border-radius: 50%;
+    border: 1.5px solid rgba(254, 240, 138, 0.95);
+    box-shadow: 0 0 14px rgba(254, 240, 138, 0.8);
+    z-index: 1;
+  }
+
+  .black-hole-jet {
+    position: absolute;
+    top: -20%;
+    left: 48%;
+    width: 4%;
+    height: 140%;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(56, 189, 248, 0.4) 30%,
+      rgba(255, 255, 255, 0.8) 50%,
+      rgba(56, 189, 248, 0.4) 70%,
+      transparent 100%
+    );
+    filter: blur(3px);
+    transform: rotate(74deg);
+    opacity: 0.6;
+  }
+
+  /* =========================================================
+   * GALAXY 3: Sombrero Galaxy (NGC 4594 Edge-on Dust Lane Disc)
+   * ========================================================= */
+  .sombrero-system {
+    top: 50%;
+    left: 4%;
+    width: 260px;
+    height: 110px;
+    opacity: 0.78;
+    z-index: 1;
+  }
+
+  :global(html:not(.dark)) .sombrero-system,
+  :global(.light) .sombrero-system {
+    opacity: 0.55;
+    mix-blend-mode: multiply;
+  }
+
+  .sombrero-disc {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+    transform: rotate(-8deg);
+  }
+
+  .sombrero-halo {
+    position: absolute;
+    inset: -10%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 50%, rgba(196, 181, 253, 0.22) 0%, rgba(99, 102, 241, 0.08) 50%, transparent 75%);
+    filter: blur(14px);
+  }
+
+  .sombrero-bulge {
+    position: absolute;
+    top: 15%;
+    left: 32%;
+    width: 36%;
+    height: 70%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #ffffff 0%, #fef3c7 28%, rgba(251, 191, 36, 0.6) 55%, transparent 78%);
+    filter: blur(6px);
+  }
+
+  .sombrero-dust-disc {
+    position: absolute;
+    top: 38%;
+    left: 2%;
+    width: 96%;
+    height: 24%;
+    border-radius: 50%;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(224, 231, 255, 0.4) 20%,
+      rgba(255, 255, 255, 0.8) 50%,
+      rgba(224, 231, 255, 0.4) 80%,
+      transparent 100%
+    );
+    filter: blur(2px);
+  }
+
+  .sombrero-dust-line {
+    position: absolute;
+    top: 48%;
+    left: 5%;
+    width: 90%;
+    height: 3px;
+    background: rgba(15, 23, 42, 0.85);
+    border-radius: 2px;
+    filter: blur(1px);
+    box-shadow: 0 0 6px rgba(15, 23, 42, 0.9);
+  }
+
+  /* =========================================================
+   * Floating Asteroid Belt Stream
+   * ========================================================= */
+  .asteroid-belt-stream {
+    bottom: 22%;
+    left: 28%;
+    width: 340px;
+    height: 120px;
+    opacity: 0.7;
+    transform: rotate(-14deg);
+    pointer-events: none;
+  }
+
+  .asteroid {
+    position: absolute;
+    border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+    background: radial-gradient(circle at 30% 30%, #e2e8f0 0%, #64748b 60%, #1e293b 100%);
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  }
+  .ast-1 { width: 7px; height: 6px; top: 20%; left: 10%; }
+  .ast-2 { width: 5px; height: 5px; top: 45%; left: 32%; }
+  .ast-3 { width: 8px; height: 7px; top: 30%; left: 55%; }
+  .ast-4 { width: 4px; height: 4px; top: 65%; left: 74%; }
+  .ast-5 { width: 6px; height: 5px; top: 40%; left: 88%; }
+  .ast-6 { width: 9px; height: 8px; top: 15%; left: 42%; }
 
   /* =========================================================
    * PLANET 1: Photorealistic Gas Supergiant (Top-Right)
@@ -522,6 +911,7 @@
     right: -45px;
     width: 360px;
     height: 360px;
+    z-index: 2;
   }
 
   .gas-giant-atmosphere {
@@ -625,18 +1015,8 @@
     background: rgba(30, 41, 59, 0.45);
     box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.6);
   }
-  .moon-crater.c1 {
-    width: 6px;
-    height: 6px;
-    top: 7px;
-    left: 9px;
-  }
-  .moon-crater.c2 {
-    width: 4px;
-    height: 4px;
-    top: 14px;
-    left: 6px;
-  }
+  .moon-crater.c1 { width: 6px; height: 6px; top: 7px; left: 9px; }
+  .moon-crater.c2 { width: 4px; height: 4px; top: 14px; left: 6px; }
 
   /* =========================================================
    * PLANET 2: Photorealistic Saturnian Ringed Planet (Bottom-Left)
@@ -646,6 +1026,7 @@
     left: 15%;
     width: 290px;
     height: 290px;
+    z-index: 2;
   }
 
   .saturn-ambient-glow {
@@ -741,6 +1122,7 @@
     right: 6%;
     width: 136px;
     height: 136px;
+    z-index: 2;
   }
 
   .exo-earth-glow {
@@ -805,6 +1187,7 @@
     left: 25%;
     width: 64px;
     height: 64px;
+    z-index: 2;
   }
 
   .crimson-sphere {
@@ -837,10 +1220,24 @@
   /* =========================================================
    * LIGHT MODE (CELESTIAL DAYBREAK) PLANETARY SHADING ADAPTATIONS
    * ========================================================= */
-  :global(html:not(.dark)) .andromeda-System,
-  :global(.light) .andromeda-System {
-    opacity: 0.48;
-    mix-blend-mode: multiply;
+  :global(html:not(.dark)) .planet-gas-giant,
+  :global(.light) .planet-gas-giant {
+    filter: saturate(1.25) contrast(1.1);
+  }
+
+  :global(html:not(.dark)) .planet-saturn,
+  :global(.light) .planet-saturn {
+    filter: saturate(1.25) contrast(1.1);
+  }
+
+  :global(html:not(.dark)) .planet-exo-earth,
+  :global(.light) .planet-exo-earth {
+    filter: saturate(1.3) contrast(1.15);
+  }
+
+  :global(html:not(.dark)) .planet-crimson,
+  :global(.light) .planet-crimson {
+    filter: saturate(1.3) contrast(1.1);
   }
 
   :global(html:not(.dark)) .gas-giant-sphere,
