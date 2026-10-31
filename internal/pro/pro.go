@@ -32,8 +32,19 @@ func ScanInput(text string) string {
 // ══════ PROSES 3 — Model Routing (whitelist seleksi) ══════
 
 var AllowedModels = map[string]bool{
-	"meta-llama/llama-3-8b-instruct": true,
-	"mistralai/mistral-7b-instruct":  true,
+	"meta-llama/llama-3-8b-instruct":      true,
+	"mistralai/mistral-7b-instruct":       true,
+	"opencode/deepseek-v4.1-flash-free":   true,
+	"opencode/beam-free":                  true,
+	"opencode/glm-5.3-flash-free":         true,
+	"opencode/mimo-v2.6-flash-free":       true,
+	"opencode/nemotron-3.5-super-vl-free": true,
+	"deepseek-v4.1-flash-free":            true,
+	"beam-free":                           true,
+	"glm-5.3-flash-free":                  true,
+	"mimo-v2.6-flash-free":                true,
+	"nemotron-3.5-super-vl-free":          true,
+	"OPENCODE":                            true,
 }
 
 // ══════ PROSES 2 — System Prompt Injection ══════
@@ -173,17 +184,19 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rewritten, _ := json.Marshal(req)
 
+	clientAuth := r.Header.Get("Authorization")
+
 	if req.Stream {
-		g.ServeStream(w, rewritten)
+		g.ServeStream(w, rewritten, clientAuth)
 	} else {
-		g.ServeBuffered(w, rewritten)
+		g.ServeBuffered(w, rewritten, clientAuth)
 	}
 }
 
 // ══════ PROSES 4a — Non-streaming (full scan before deliver) ══════
 
-func (g *Gateway) ServeBuffered(w http.ResponseWriter, body []byte) {
-	resp, err := g.Post(body)
+func (g *Gateway) ServeBuffered(w http.ResponseWriter, body []byte, clientAuth string) {
+	resp, err := g.Post(body, clientAuth)
 	if err != nil {
 		Reject(w, http.StatusBadGateway, "upstream error")
 		return
@@ -225,8 +238,8 @@ func (g *Gateway) ServeBuffered(w http.ResponseWriter, body []byte) {
 
 // ══════ PROSES 4b — Streaming SSE (live cut on hit) ══════
 
-func (g *Gateway) ServeStream(w http.ResponseWriter, body []byte) {
-	resp, err := g.Post(body)
+func (g *Gateway) ServeStream(w http.ResponseWriter, body []byte, clientAuth string) {
+	resp, err := g.Post(body, clientAuth)
 	if err != nil {
 		Reject(w, http.StatusBadGateway, "upstream error")
 		return
@@ -294,14 +307,16 @@ func (g *Gateway) ServeStream(w http.ResponseWriter, body []byte) {
 	}
 }
 
-func (g *Gateway) Post(body []byte) (*http.Response, error) {
+func (g *Gateway) Post(body []byte, clientAuth string) (*http.Response, error) {
 	url := strings.TrimSuffix(g.Upstream, "/") + "/chat/completions"
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if g.APIKey != "" {
+	if clientAuth != "" {
+		req.Header.Set("Authorization", clientAuth)
+	} else if g.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+g.APIKey)
 	}
 	req.Header.Set("Accept", "text/event-stream")
