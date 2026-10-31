@@ -339,7 +339,11 @@ var modelCapabilities = map[string]Capabilities{
 	// "thinking" while reasoning_effort is accepted (upstream 32c5f30a,
 	// probed live on /inference/v1 and /zen/v1). Global like upstream: no
 	// other provider serves this id.
-	"glm-5.3-flash-free":           {Vision: true, VideoInput: true, PDF: true, Reasoning: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 128000},
+	"glm-5.3-flash-free":           {Vision: true, VideoInput: true, PDF: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 128000},
+	"beam-free":                    {Tools: true, ContextWindow: 200000, MaxOutput: 64000},
+	"deepseek-v4.1-flash-free":     {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "deepseek", ContextWindow: 1000000, MaxOutput: 131072},
+	"mimo-v2.6-flash-free":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 131072},
+	"nemotron-3.5-super-vl-free":   {Vision: true, VideoInput: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 131072},
 	"glm-4.6v":                     {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "zai"},
 	"glm-4.5v":                     {Vision: true, VideoInput: true, Reasoning: true, Tools: true, ThinkingFormat: "zai"},
 	"deepseek-v4-flash-vision-exp": {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "deepseek"},

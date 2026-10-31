@@ -279,12 +279,17 @@ func openCodeFamilyFormatsFor(base string) *ModelFormats {
 // instead of editing one to match the other.
 var openCodeFreeTierModels = map[string]bool{
 	// opencode (free provider)
+	"beam-free":                       true,
+	"deepseek-v4.1-flash-free":        true,
+	"glm-5.3-flash-free":              true,
+	"longcat-2.5-preview-free":        true,
+	"mimo-v2.6-flash-free":            true,
+	"nemotron-3.5-super-vl-free":      true,
 	"muse-spark-1.2-contributor-free": true,
 	"muse-spark-1.3-contributor-free": true,
 	"jev-1.13-free":                   true,
 	// opencode-zen free tier on the keyed lane
 	"deepseek-v4-flash-free":      true,
-	"mimo-v2.6-flash-free":        true,
 	"mimo-v2.5-free":              true,
 	"ling-3.0-flash-fin-free":     true,
 	"nemotron-3-ultra-free":       true,

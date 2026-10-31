@@ -41,10 +41,16 @@ const (
 // forever, and repeating it would burn quota and delay the error the caller
 // needs to see.
 func isOpenCodeRefusal(ue *proxy.UpstreamError) bool {
-	if ue == nil || ue.StatusCode != http.StatusForbidden {
+	if ue == nil {
 		return false
 	}
-	return bytes.Contains(ue.Body, []byte(openCodeRefusalToken))
+	if ue.StatusCode == http.StatusForbidden && bytes.Contains(ue.Body, []byte(openCodeRefusalToken)) {
+		return true
+	}
+	if ue.StatusCode == http.StatusTooManyRequests && bytes.Contains(ue.Body, []byte(openCodeUsageLimitToken)) {
+		return true
+	}
+	return false
 }
 
 // openCodeUsageLimitToken is the error type the gate answers with when the

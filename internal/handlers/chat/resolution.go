@@ -357,6 +357,12 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 		return &ModelInfo{Provider: "codex", Model: modelStr}, nil
 	}
 
+	// OpenCode Free models: bare model ids from OpenCode client model picker
+	// (e.g. beam-free, glm-5.3-flash-free, deepseek-v4.1-flash-free, etc.)
+	if isOpenCodeFreeModelSlug(modelStr) {
+		return &ModelInfo{Provider: "opencode", Model: modelStr}, nil
+	}
+
 	// 3.5 Check if it's a bare provider alias (e.g., "ag" -> "antigravity")
 	// Check custom prefix provider nodes first for bare alias
 	if info := h.resolvePrefixProvider(modelStr, ""); info != nil {
@@ -395,6 +401,14 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 //
 // The rules are checked in upstream's order and ahead of the generic fallback;
 // plain gpt-4*, gpt-3.5* and gpt-4o* deliberately do not match.
+func isOpenCodeFreeModelSlug(model string) bool {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	if lower == "" {
+		return false
+	}
+	return providers.IsOpencodeFreeTierModel("opencode", lower)
+}
+
 func codexOnlyModelSlug(model string) bool {
 	lower := strings.ToLower(strings.TrimSpace(model))
 	if lower == "" {

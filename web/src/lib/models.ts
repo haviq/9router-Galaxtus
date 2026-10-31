@@ -4101,6 +4101,41 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
   ],
   "oc": [
     {
+      "id": "beam-free",
+      "name": "Beam Free",
+      "supportedFormats": ["openai"]
+    },
+    {
+      "id": "deepseek-v4.1-flash-free",
+      "name": "DeepSeek V4.1 Flash Free",
+      "supportedFormats": ["openai"],
+      "capabilities": ["reasoning"]
+    },
+    {
+      "id": "glm-5.3-flash-free",
+      "name": "GLM - 5.3 - Flash Free",
+      "supportedFormats": ["openai"],
+      "capabilities": ["vision", "reasoning"]
+    },
+    {
+      "id": "mimo-v2.6-flash-free",
+      "name": "MiMo - V2.6 - Flash Free",
+      "supportedFormats": ["openai"],
+      "capabilities": ["vision", "reasoning"]
+    },
+    {
+      "id": "nemotron-3.5-super-vl-free",
+      "name": "Nemotron 3.5 Super VL Free",
+      "supportedFormats": ["openai"],
+      "capabilities": ["vision", "reasoning"]
+    },
+    {
+      "id": "longcat-2.5-preview-free",
+      "name": "LongCat 2.5 Preview Free",
+      "supportedFormats": ["openai"],
+      "capabilities": ["vision", "reasoning"]
+    },
+    {
       "id": "mimo-v2.5-free",
       "name": "mimo-v2.5-free",
       "supportedFormats": ["openai"],
