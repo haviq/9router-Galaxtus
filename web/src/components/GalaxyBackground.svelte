@@ -39,7 +39,11 @@
         flare: boolean
       }
 
-      const palette = ['#ffffff', '#e0f2fe', '#ddd6fe', '#fef3c7', '#fbcfe8', '#bae6fd']
+      let isDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true
+
+      const darkPalette = ['#ffffff', '#e0f2fe', '#ddd6fe', '#fef3c7', '#fbcfe8', '#bae6fd']
+      const lightPalette = ['#4338ca', '#6366f1', '#7c3aed', '#0284c7', '#ea580c', '#db2777', '#2563eb']
+
       const allStars: Star[] = Array.from({ length: 340 }, (_, i) => {
         const inBand = i % 5 < 2
         let nx = ((i * 7919 + 104729) % 10000) / 10000
@@ -51,6 +55,7 @@
           ny = Math.min(0.99, Math.max(0.01, 1 - t * 0.78 + spread - 0.08))
         }
         const r = i % 29 === 0 ? 1.85 : i % 7 === 0 ? 1.2 : 0.75
+        const curPalette = isDark ? darkPalette : lightPalette
         return {
           x: nx,
           y: ny,
@@ -58,7 +63,7 @@
           baseAlpha: 0.25 + (i % 70) / 100,
           speed: 0.6 + (i % 19) * 0.12,
           phase: (i * 1.37) % (Math.PI * 2),
-          color: palette[i % palette.length],
+          color: curPalette[i % curPalette.length],
           flare: i % 38 === 0,
         }
       })
@@ -81,7 +86,27 @@
         }
       }
 
+      const updateStarColors = () => {
+        isDark = document.documentElement.classList.contains('dark')
+        const curPalette = isDark ? darkPalette : lightPalette
+        for (let i = 0; i < allStars.length; i++) {
+          allStars[i].color = curPalette[i % curPalette.length]
+        }
+        paintStaticStars()
+      }
+
       paintStaticStars()
+
+      const themeObserver = new MutationObserver(() => {
+        const currentDark = document.documentElement.classList.contains('dark')
+        if (currentDark !== isDark) {
+          updateStarColors()
+        }
+      })
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      })
 
       const handleResize = () => {
         if (!canvas) return
@@ -163,9 +188,15 @@
                 meteor.x - meteor.vx * 10,
                 meteor.y - meteor.vy * 10
               )
-              grad.addColorStop(0, `rgba(255, 255, 255, ${meteor.alpha})`)
-              grad.addColorStop(0.3, `rgba(196, 181, 253, ${meteor.alpha * 0.6})`)
-              grad.addColorStop(1, 'rgba(196, 181, 253, 0)')
+              if (!isDark) {
+                grad.addColorStop(0, `rgba(99, 102, 241, ${meteor.alpha * 0.95})`)
+                grad.addColorStop(0.35, `rgba(234, 88, 12, ${meteor.alpha * 0.55})`)
+                grad.addColorStop(1, 'rgba(234, 88, 12, 0)')
+              } else {
+                grad.addColorStop(0, `rgba(255, 255, 255, ${meteor.alpha})`)
+                grad.addColorStop(0.3, `rgba(196, 181, 253, ${meteor.alpha * 0.6})`)
+                grad.addColorStop(1, 'rgba(196, 181, 253, 0)')
+              }
 
               ctx2d.globalAlpha = 1
               ctx2d.strokeStyle = grad
@@ -267,6 +298,7 @@
 
     return () => {
       cancelAnimationFrame(animId)
+      themeObserver.disconnect()
       window.removeEventListener('resize', handleResize)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       gsapCtx.revert()
@@ -276,7 +308,7 @@
 
 <div
   bind:this={containerEl}
-  class="galaxy-scene fixed inset-0 pointer-events-none overflow-hidden select-none transition-opacity duration-500 dark:opacity-100 opacity-0"
+  class="galaxy-scene fixed inset-0 pointer-events-none overflow-hidden select-none transition-opacity duration-500 opacity-100"
   style="z-index: 0;"
   aria-hidden="true"
 >
@@ -346,6 +378,14 @@
     transform: translateZ(0);
     background:
       radial-gradient(ellipse 120% 80% at 50% -10%, #0d132e 0%, #050714 52%, #020308 100%);
+    transition: background 0.4s ease;
+  }
+
+  /* Celestial Daylight / Cosmic Dawn (Light Theme) */
+  :global(html:not(.dark)) .galaxy-scene,
+  :global(.light) .galaxy-scene {
+    background:
+      radial-gradient(ellipse 120% 85% at 50% -10%, #fafcff 0%, #eef3f9 42%, #dde5f2 100%);
   }
 
   /* Volumetric Milky Way diagonal dust lane */
@@ -358,6 +398,16 @@
       radial-gradient(50% 20% at 50% 50%, rgba(56, 189, 248, 0.10) 0%, transparent 70%);
     transform: rotate(-28deg) translateZ(0);
     filter: blur(42px);
+    transition: background 0.4s ease;
+  }
+
+  :global(html:not(.dark)) .milky-way-core,
+  :global(.light) .milky-way-core {
+    background:
+      radial-gradient(45% 22% at 62% 28%, rgba(124, 58, 237, 0.15) 0%, rgba(79, 70, 229, 0.07) 48%, transparent 75%),
+      radial-gradient(38% 18% at 35% 68%, rgba(229, 106, 74, 0.12) 0%, rgba(219, 39, 119, 0.07) 50%, transparent 78%),
+      radial-gradient(50% 20% at 50% 50%, rgba(2, 132, 199, 0.09) 0%, transparent 70%);
+    mix-blend-mode: multiply;
   }
 
   .nebula-pillars {
@@ -368,6 +418,15 @@
       radial-gradient(24% 22% at 18% 24%, rgba(168, 85, 247, 0.15), transparent 70%);
     filter: blur(55px);
     transform: translateZ(0);
+    transition: background 0.4s ease;
+  }
+
+  :global(html:not(.dark)) .nebula-pillars,
+  :global(.light) .nebula-pillars {
+    background:
+      radial-gradient(28% 24% at 82% 72%, rgba(2, 132, 199, 0.11), transparent 72%),
+      radial-gradient(24% 22% at 18% 24%, rgba(147, 51, 234, 0.12), transparent 70%);
+    mix-blend-mode: multiply;
   }
 
   /* =========================================================
@@ -749,5 +808,93 @@
     inset: 0;
     border-radius: 50%;
     background: radial-gradient(circle at 26% 26%, transparent 38%, rgba(4, 1, 2, 0.92) 82%);
+  }
+
+  /* =========================================================
+   * LIGHT MODE (CELESTIAL DAYBREAK) PLANETARY SHADING ADAPTATIONS
+   * ========================================================= */
+  :global(html:not(.dark)) .andromeda-System,
+  :global(.light) .andromeda-System {
+    opacity: 0.48;
+    mix-blend-mode: multiply;
+  }
+
+  :global(html:not(.dark)) .gas-giant-sphere,
+  :global(.light) .gas-giant-sphere {
+    box-shadow:
+      inset -38px -38px 65px rgba(30, 27, 75, 0.65),
+      inset 8px 8px 24px rgba(255, 255, 255, 0.8),
+      0 16px 45px -8px rgba(124, 58, 237, 0.28);
+  }
+
+  :global(html:not(.dark)) .gas-giant-terminator,
+  :global(.light) .gas-giant-terminator {
+    opacity: 0.52;
+  }
+
+  :global(html:not(.dark)) .gas-giant-atmosphere,
+  :global(.light) .gas-giant-atmosphere {
+    opacity: 0.65;
+  }
+
+  :global(html:not(.dark)) .gas-giant-moon-orbit,
+  :global(.light) .gas-giant-moon-orbit {
+    border-color: rgba(99, 102, 241, 0.22);
+  }
+
+  :global(html:not(.dark)) .cratered-moon,
+  :global(.light) .cratered-moon {
+    box-shadow:
+      inset -4px -4px 8px rgba(30, 41, 59, 0.6),
+      0 2px 10px rgba(99, 102, 241, 0.25);
+  }
+
+  :global(html:not(.dark)) .saturn-sphere,
+  :global(.light) .saturn-sphere {
+    box-shadow:
+      inset -22px -20px 38px rgba(67, 20, 7, 0.65),
+      inset 5px 5px 14px rgba(255, 237, 213, 0.8),
+      0 12px 32px -4px rgba(234, 88, 12, 0.24);
+  }
+
+  :global(html:not(.dark)) .saturn-terminator,
+  :global(.light) .saturn-terminator {
+    opacity: 0.48;
+  }
+
+  :global(html:not(.dark)) .saturn-rings-front,
+  :global(.light) .saturn-rings-front {
+    filter: drop-shadow(0 6px 12px rgba(124, 45, 18, 0.28));
+  }
+
+  :global(html:not(.dark)) .exo-earth-sphere,
+  :global(.light) .exo-earth-sphere {
+    box-shadow:
+      inset -18px -18px 28px rgba(8, 47, 73, 0.65),
+      inset 4px 4px 12px rgba(255, 255, 255, 0.85),
+      0 10px 28px -4px rgba(2, 132, 199, 0.28);
+  }
+
+  :global(html:not(.dark)) .exo-earth-terminator,
+  :global(.light) .exo-earth-terminator {
+    opacity: 0.5;
+  }
+
+  :global(html:not(.dark)) .exo-earth-glow,
+  :global(.light) .exo-earth-glow {
+    opacity: 0.75;
+  }
+
+  :global(html:not(.dark)) .crimson-sphere,
+  :global(.light) .crimson-sphere {
+    box-shadow:
+      inset -8px -8px 16px rgba(76, 5, 25, 0.65),
+      inset 3px 3px 8px rgba(255, 228, 230, 0.8),
+      0 8px 20px -3px rgba(225, 29, 72, 0.24);
+  }
+
+  :global(html:not(.dark)) .crimson-terminator,
+  :global(.light) .crimson-terminator {
+    opacity: 0.52;
   }
 </style>
