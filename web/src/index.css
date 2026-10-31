@@ -75,7 +75,7 @@ html:not(.dark) {
   --app-surface: #ffffff;
   --app-surface-2: #f1f5f9;
   --app-surface-3: #e2e8f0;
-  --app-sidebar: rgba(255, 255, 255, 0.88);
+  --app-sidebar: rgba(255, 255, 255, 0.78);
   --app-border: rgba(0, 0, 0, 0.08);
   --app-border-subtle: rgba(0, 0, 0, 0.05);
   --app-text-main: #0f172a;
@@ -1090,14 +1090,14 @@ html.dark {
 /* Light Mode iOS Frosted White Crystal Cards */
 :root:not(.dark) .bg-surface {
   border-radius: 22px;
-  background-color: rgba(255, 255, 255, 0.92);
+  background-color: rgba(255, 255, 255, 0.78);
   background-image: none;
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 1),
-    0 10px 28px -6px rgba(0, 0, 0, 0.05);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    0 12px 32px -4px rgba(79, 70, 229, 0.08);
   transition:
     box-shadow 0.28s var(--ease-out-expo),
     border-color 0.28s var(--ease-out-expo),
@@ -1105,17 +1105,19 @@ html.dark {
 }
 
 :root:not(.dark) .bg-surface:hover {
-  background-color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.88);
   border-color: rgba(0, 0, 0, 0.12);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 1),
-    0 14px 34px -6px rgba(0, 0, 0, 0.08);
+    0 16px 38px -6px rgba(79, 70, 229, 0.1);
 }
 
 :root:not(.dark) .bg-surface-2 {
   border-radius: 13px;
-  background-color: rgba(241, 245, 249, 0.88);
+  background-color: rgba(241, 245, 249, 0.75);
   background-image: none;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),

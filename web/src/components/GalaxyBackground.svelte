@@ -74,14 +74,16 @@
       const paintStaticStars = () => {
         if (!staticCtx) return
         staticCtx.clearRect(0, 0, w, h)
+        const alphaMultiplier = isDark ? 0.85 : 1.2
+        const rMultiplier = isDark ? 1 : 1.25
         for (let i = 0; i < staticStars.length; i++) {
           const s = staticStars[i]
           const sx = s.x * w
           const sy = s.y * h
-          staticCtx.globalAlpha = s.baseAlpha * 0.85
+          staticCtx.globalAlpha = Math.min(1, s.baseAlpha * alphaMultiplier)
           staticCtx.fillStyle = s.color
           staticCtx.beginPath()
-          staticCtx.arc(sx, sy, s.r, 0, Math.PI * 2)
+          staticCtx.arc(sx, sy, s.r * rMultiplier, 0, Math.PI * 2)
           staticCtx.fill()
         }
       }
@@ -135,28 +137,30 @@
         ctx2d.globalAlpha = 1
         ctx2d.drawImage(staticCanvas, 0, 0)
 
+        const alphaMultiplier = isDark ? 1 : 1.25
+        const rMultiplier = isDark ? 1 : 1.25
         for (let i = 0; i < dynamicStars.length; i++) {
           const s = dynamicStars[i]
           const sx = s.x * w
           const sy = s.y * h
           const twinkle = reduced ? 1 : 0.55 + 0.45 * Math.sin(t * s.speed + s.phase)
-          const a = s.baseAlpha * twinkle
+          const a = Math.min(1, s.baseAlpha * twinkle * alphaMultiplier)
 
           ctx2d.globalAlpha = a
           ctx2d.fillStyle = s.color
           ctx2d.beginPath()
-          ctx2d.arc(sx, sy, s.r, 0, Math.PI * 2)
+          ctx2d.arc(sx, sy, s.r * rMultiplier, 0, Math.PI * 2)
           ctx2d.fill()
 
           if (s.flare) {
-            ctx2d.globalAlpha = a * 0.45
+            ctx2d.globalAlpha = a * (isDark ? 0.45 : 0.65)
             ctx2d.strokeStyle = s.color
-            ctx2d.lineWidth = 0.8
+            ctx2d.lineWidth = isDark ? 0.8 : 1.1
             ctx2d.beginPath()
-            ctx2d.moveTo(sx - s.r * 4.2, sy)
-            ctx2d.lineTo(sx + s.r * 4.2, sy)
-            ctx2d.moveTo(sx, sy - s.r * 4.2)
-            ctx2d.lineTo(sx, sy + s.r * 4.2)
+            ctx2d.moveTo(sx - s.r * 4.2 * rMultiplier, sy)
+            ctx2d.lineTo(sx + s.r * 4.2 * rMultiplier, sy)
+            ctx2d.moveTo(sx, sy - s.r * 4.2 * rMultiplier)
+            ctx2d.lineTo(sx, sy + s.r * 4.2 * rMultiplier)
             ctx2d.stroke()
           }
         }
@@ -385,7 +389,27 @@
   :global(html:not(.dark)) .galaxy-scene,
   :global(.light) .galaxy-scene {
     background:
-      radial-gradient(ellipse 120% 85% at 50% -10%, #fafcff 0%, #eef3f9 42%, #dde5f2 100%);
+      radial-gradient(ellipse 130% 90% at 50% -10%, #e0e7ff 0%, #ede9fe 25%, #e2e8f0 60%, #cbd5e1 100%);
+  }
+
+  :global(html:not(.dark)) .planet-gas-giant,
+  :global(.light) .planet-gas-giant {
+    filter: saturate(1.25) contrast(1.1);
+  }
+
+  :global(html:not(.dark)) .planet-saturn,
+  :global(.light) .planet-saturn {
+    filter: saturate(1.25) contrast(1.1);
+  }
+
+  :global(html:not(.dark)) .planet-exo-earth,
+  :global(.light) .planet-exo-earth {
+    filter: saturate(1.3) contrast(1.15);
+  }
+
+  :global(html:not(.dark)) .planet-crimson,
+  :global(.light) .planet-crimson {
+    filter: saturate(1.3) contrast(1.1);
   }
 
   /* Volumetric Milky Way diagonal dust lane */

@@ -25,16 +25,24 @@ export function registerServiceWorker() {
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      let refreshing = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true
+          window.location.reload()
+        }
+      })
+
       navigator.serviceWorker
         .register('/sw.js')
         .then((reg) => {
-          // Listen for updates
+          reg.update()
           reg.onupdatefound = () => {
             const installingWorker = reg.installing
             if (installingWorker) {
               installingWorker.onstatechange = () => {
                 if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  // New content is available once old tabs close
+                  installingWorker.postMessage({ type: 'SKIP_WAITING' })
                 }
               }
             }
