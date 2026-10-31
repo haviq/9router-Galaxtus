@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" type="image/x-icon" />
@@ -13,8 +13,20 @@
     <meta name="apple-mobile-web-app-title" content="9router Galactus" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>9router Galactus - High-Throughput AI Gateway</title>
+    <script>
+      (function() {
+        var t = localStorage.getItem('9router-theme') || localStorage.getItem('theme') || 'dark';
+        if (t === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.classList.add('light');
+        }
+      })();
+    </script>
   </head>
-  <body class="bg-[#0b0e13] text-[#e1e2ea] font-sans antialiased selection:bg-[#ff5c35]/30 selection:text-white">
+  <body class="bg-[var(--app-bg)] text-[var(--app-text-main)] font-sans antialiased selection:bg-[#e56a4a]/30 selection:text-white transition-colors duration-300">
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -276,7 +276,7 @@
 
 <div
   bind:this={containerEl}
-  class="galaxy-scene fixed inset-0 pointer-events-none overflow-hidden select-none"
+  class="galaxy-scene fixed inset-0 pointer-events-none overflow-hidden select-none transition-opacity duration-500 dark:opacity-100 opacity-0"
   style="z-index: 0;"
   aria-hidden="true"
 >

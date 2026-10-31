@@ -28,7 +28,7 @@
   // The group invite rotates. Everything user-facing points at the redirect
   // page instead, so a revoked link is repaired by editing site/tg.html alone
   // and every already-installed dashboard follows the new one.
-  const TELEGRAM_GROUP_URL = 'https://luqman-v1.github.io/9router-go/tg'
+  const COMMUNITY_URL = 'https://github.com/haviq/9router-Galaxtus/discussions'
 
   // Theme state
   let isDark = $state(true)
@@ -346,7 +346,7 @@
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
         <h2 class="text-lg font-semibold text-text-main flex items-center gap-2">
           <span class="material-symbols-outlined text-pink-500">volunteer_activism</span>
-          Support 9router-go
+          Support 9router Galactus
         </h2>
         <button
           type="button"
@@ -359,7 +359,7 @@
       </div>
 
       <p class="text-sm text-text-muted leading-relaxed">
-        9router-go is a fast, lightweight and open-source high-throughput AI gateway in Go. If 9router-go saves you time and tokens, consider supporting the project!
+        9router Galactus is a fast, lightweight and open-source high-throughput AI gateway in Go. If 9router Galactus saves you time and tokens, consider supporting the project!
       </p>
 
       <!-- Three destinations, stacked rather than tiled: a 2-column grid leaves
@@ -367,7 +367,7 @@
            reads as a list, which is what these are. -->
       <div class="flex flex-col gap-2.5">
         <a
-          href="https://github.com/luqman-v1/9router-go"
+          href="https://github.com/haviq/9router-Galaxtus"
           target="_blank"
           rel="noopener noreferrer"
           class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-brand-500/40 transition-colors group"
@@ -384,7 +384,7 @@
         </a>
 
         <a
-          href="https://github.com/luqman-v1/9router-go/releases"
+          href="https://github.com/haviq/9router-Galaxtus/releases"
           target="_blank"
           rel="noopener noreferrer"
           class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-pink-500/40 transition-colors group"
@@ -404,7 +404,7 @@
              group link is fixed in site/tg.html without shipping a new binary to
              everyone already running one. -->
         <a
-          href={TELEGRAM_GROUP_URL}
+          href={COMMUNITY_URL}
           target="_blank"
           rel="noopener noreferrer"
           class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-sky-600/50 dark:hover:border-sky-400/50 transition-colors group"
@@ -414,7 +414,7 @@
           </div>
           <div class="min-w-0">
             <div class="text-sm font-semibold text-text-main group-hover:text-sky-700 dark:group-hover:text-sky-400 transition-colors">
-              Telegram Group
+              Community Discussions
             </div>
             <div class="text-xs text-text-muted">Release notes, questions, provider issues</div>
           </div>
