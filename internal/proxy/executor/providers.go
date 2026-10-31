@@ -580,6 +580,15 @@ func ForwardCommandcode(w http.ResponseWriter, req *Request) error {
 	return handleCommandcodeStream(w, req, resp.Body, oreq.Model)
 }
 
+func isOpenCodeReasoningModel(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-super-vl-free":
+		return true
+	default:
+		return false
+	}
+}
+
 // ForwardOpencode handles requests for opencode (free tier).
 func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 	apiKey := req.APIKey
@@ -700,8 +709,16 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 		// adaptive thinking (Claude Code's thinking:{type:"adaptive"})
 		// arrives as. Omitting it lets the upstream pick its own default,
 		// which is what adaptive means.
-		if v, ok := reqMap["reasoning_effort"].(string); ok && v == "auto" {
-			delete(reqMap, "reasoning_effort")
+		if v, ok := reqMap["reasoning_effort"].(string); ok && (v == "auto" || v == "") {
+			if isOpenCodeReasoningModel(cleanModel) {
+				reqMap["reasoning_effort"] = "low"
+			} else {
+				delete(reqMap, "reasoning_effort")
+			}
+		} else if _, ok := reqMap["reasoning_effort"]; !ok {
+			if isOpenCodeReasoningModel(cleanModel) {
+				reqMap["reasoning_effort"] = "low"
+			}
 		}
 		// Deterministic marshaling keeps the serialized request prefix
 		// stable across turns, which DeepSeek's prefix prompt cache

@@ -91,9 +91,16 @@ var (
 	opencodeStableOrder    []string
 )
 
+const (
+	opencodeMaxSessionUses = 15
+	opencodeMaxSessionAge  = 10 * time.Minute
+)
+
 type opencodeStableEntry struct {
-	id       string
-	lastUsed time.Time
+	id        string
+	createdAt time.Time
+	lastUsed  time.Time
+	useCount  int
 }
 
 // StableOpenCodeSessionID returns one long-lived canonical session per key,
@@ -115,13 +122,23 @@ func StableOpenCodeSessionID(key string) string {
 	now := time.Now()
 	opencodeStableMu.Lock()
 	defer opencodeStableMu.Unlock()
-	if entry, ok := opencodeStableSessions[key]; ok && now.Sub(entry.lastUsed) < opencodeStableSessionTTL {
-		entry.lastUsed = now
-		opencodeStableSessions[key] = entry
-		return entry.id
+	if entry, ok := opencodeStableSessions[key]; ok {
+		if now.Sub(entry.lastUsed) < opencodeStableSessionTTL &&
+			now.Sub(entry.createdAt) < opencodeMaxSessionAge &&
+			entry.useCount < opencodeMaxSessionUses {
+			entry.lastUsed = now
+			entry.useCount++
+			opencodeStableSessions[key] = entry
+			return entry.id
+		}
 	}
 	id := GenerateOpenCodeSessionID()
-	opencodeStableSessions[key] = opencodeStableEntry{id: id, lastUsed: now}
+	opencodeStableSessions[key] = opencodeStableEntry{
+		id:        id,
+		createdAt: now,
+		lastUsed:  now,
+		useCount:  1,
+	}
 	opencodeStableOrder = append(opencodeStableOrder, key)
 	for len(opencodeStableOrder) > opencodeStableSessionLimit {
 		oldest := opencodeStableOrder[0]
