@@ -191,6 +191,69 @@ func TestSystemPromptPrependedToClaudeBlockSystem(t *testing.T) {
 	}
 }
 
+// applySystemPrompt applies the preset prompt according to its inject mode.
+// Prepend (the default) leads, append follows the existing content, and replace
+// drops it — in both the OpenAI messages shape and the Claude string/block
+// system shape, since a preset is wire-agnostic.
+func TestApplySystemPromptModes(t *testing.T) {
+	openAIMsgs := []any{map[string]any{"role": "user", "content": "hi"}}
+	tests := []struct {
+		name        string
+		body        map[string]any
+		mode        string
+		wantSystem  string
+		wantMsgRole string
+	}{
+		{
+			name:        "default prepend uses a leading system message",
+			body:        map[string]any{"messages": append([]any{}, openAIMsgs...)},
+			mode:        "",
+			wantMsgRole: "system",
+		},
+		{
+			name:       "append keeps the original system first",
+			body:       map[string]any{"system": "base"},
+			mode:       db.JailbreakInjectAppend,
+			wantSystem: "base\n\nCUSTOM RULES",
+		},
+		{
+			name:       "replace overwrites the original system",
+			body:       map[string]any{"system": "base"},
+			mode:       db.JailbreakInjectReplace,
+			wantSystem: "CUSTOM RULES",
+		},
+		{
+			name:        "replace with no system still lands as a message",
+			body:        map[string]any{"messages": append([]any{}, openAIMsgs...)},
+			mode:        db.JailbreakInjectReplace,
+			wantMsgRole: "system",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			applySystemPrompt(tt.body, "CUSTOM RULES", tt.mode)
+			if tt.wantSystem != "" {
+				got, _ := tt.body["system"].(string)
+				if got != tt.wantSystem {
+					t.Errorf("system = %q, want %q", got, tt.wantSystem)
+				}
+				return
+			}
+			if _, ok := tt.body["system"]; ok {
+				t.Errorf("system present, want none")
+			}
+			msgs, _ := tt.body["messages"].([]any)
+			if len(msgs) == 0 {
+				t.Fatalf("messages empty, want the prompt as a leading message")
+			}
+			first, _ := msgs[0].(map[string]any)
+			if first["role"] != tt.wantMsgRole || first["content"] != "CUSTOM RULES" {
+				t.Errorf("first message = %+v, want role %q with the prompt", first, tt.wantMsgRole)
+			}
+		})
+	}
+}
+
 func TestGeminiSafetyContextRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	if translator.GeminiSafetyRequested(ctx) {

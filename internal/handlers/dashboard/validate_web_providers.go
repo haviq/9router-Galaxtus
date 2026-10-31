@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 )
 
@@ -40,7 +41,7 @@ func deepSeekWebHeaders() map[string]string {
 // The site's own session cookie is sent along when there is one: the WAF
 // reads it, and a probe that omits it judges the credential under different
 // conditions than the turn will meet.
-func validateDeepSeekWeb(ctx context.Context, apiKey string, providerData map[string]any) validateOutcome {
+func validateDeepSeekWeb(ctx context.Context, cfg *providers.ProviderConfig, apiKey string, providerData map[string]any) validateOutcome {
 	token := executor.DeepSeekUserToken(apiKey)
 	if token == "" {
 		return validateOutcome{supported: true,
@@ -53,7 +54,13 @@ func validateDeepSeekWeb(ctx context.Context, apiKey string, providerData map[st
 		headers["cookie"] = strings.TrimSpace(cookie)
 	}
 
-	status, body, err := validateProbeDo(ctx, http.MethodGet, deepSeekUsersCurrentURL, headers, nil)
+	probeURL := deepSeekUsersCurrentURL
+	if cfg != nil && cfg.StaticHeaders != nil && cfg.StaticHeaders["x-relay-target"] != "" {
+		headers["x-relay-target"] = cfg.StaticHeaders["x-relay-target"]
+		headers["x-relay-path"] = "/api/v0/users/current"
+		probeURL = strings.TrimRight(cfg.BaseURL, "/") + "/api/v0/users/current"
+	}
+	status, body, err := validateProbeDo(ctx, http.MethodGet, probeURL, headers, nil)
 	if err != nil {
 		return validateOutcome{supported: true, message: err.Error()}
 	}

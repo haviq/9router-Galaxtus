@@ -167,6 +167,16 @@ func (h *MediaHandler) tryAntigravityImageConn(w http.ResponseWriter, r *http.Re
 	httpReq.Header.Set("User-Agent", providers.AntigravityCLIUserAgent)
 	httpReq.Header.Set("X-Client-Name", "antigravity")
 	httpReq.Header.Set("X-Client-Version", providers.AntigravityIDEVersion)
+	if providerCfg != nil {
+		for k, v := range providerCfg.StaticHeaders {
+			if v != "" {
+				httpReq.Header.Set(k, v)
+			}
+		}
+		if relayTarget := providerCfg.StaticHeaders["x-relay-target"]; relayTarget != "" {
+			httpReq.Header.Set("x-relay-path", "/v1internal:generateContent")
+		}
+	}
 
 	client, clientErr := h.ChatH.GetClientForConnection(connData)
 	if clientErr != nil {

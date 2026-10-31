@@ -106,6 +106,11 @@
       description: 'Model combos with fallback',
       icon: 'layers',
     },
+    remask: {
+      title: 'Model Remask',
+      description: 'Model remapping and stealth anti-detection cloaking',
+      icon: 'theater_comedy',
+    },
     analytics: {
       title: 'Usage & Analytics',
       description: 'Monitor your API usage, token consumption, and request logs',
@@ -177,9 +182,14 @@
       icon: 'terminal',
     },
     jailbreak: {
-      title: 'Persona',
-      description: 'Per-model system-prompt injection and Gemini safety bypass',
+      title: 'Prompt Injection',
+      description: 'Attach a system prompt to any model, combo, or every request — with a per-preset inject mode',
       icon: 'masks',
+    },
+    'model-status': {
+      title: 'Model Status',
+      description: 'Every routable model id with its injection verdict and a live upstream latency probe',
+      icon: 'monitor_heart',
     },
     settings: {
       title: 'Settings',

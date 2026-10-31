@@ -12,6 +12,7 @@ import (
 	"9router/proxy/internal/handlers"
 	"9router/proxy/internal/handlers/chat"
 	"9router/proxy/internal/middleware"
+	"9router/proxy/internal/rewrite"
 )
 
 // HandlersModule provides TokenSaverConfig and sets up the server router.
@@ -77,6 +78,7 @@ func ProvideRouter(repo *db.Repo, ts *handlers.TokenSaverConfig) (*chi.Mux, *cha
 	r.Use(middleware.MaxBodyByPath(middleware.DefaultMaxBodySize, middleware.MediaBodyLimitRules()))
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(middleware.RequestLogger)
+	r.Use(rewrite.HTTPMiddleware(repo))
 
 	engineChatH := handlers.SetupServerRouter(r, repo, ts)
 	return r, engineChatH

@@ -22,9 +22,12 @@
   import Menu from '../../lib/ui/Menu.svelte'
   import MenuItem from '../../lib/ui/MenuItem.svelte'
   import ApiKeyPolicyModal from './ApiKeyPolicyModal.svelte'
+  import ApiKeysBulkPolicyModal from './ApiKeysBulkPolicyModal.svelte'
   import {
     batchSummary,
     isBatchBusy,
+    isUnrestricted,
+    needsAttention,
     runBatch,
     selectAllState,
     toggleAll,
@@ -42,12 +45,63 @@
   let shownKeyIds = $state<Set<string>>(new Set())
   let copiedId = $state<string | null>(null)
   let policyKey = $state<APIKey | null>(null)
+  let bulkPolicyOpen = $state(false)
   let busyId = $state<string | null>(null)
   let selectedIds = $state<string[]>([])
   let batchBusy = $state(false)
+  // Which slice of the key list is on screen. "attention" is the triage view:
+  // a key that is expired or has spent its budget is silently refusing traffic,
+  // and those are the two states an operator opens this table to find.
+  let statusFilter = $state<'all' | 'attention' | 'unrestricted' | 'active' | 'paused'>('all')
 
-  const allIds = $derived(apiKeys.map((k) => k.id))
+  const visibleKeys = $derived.by(() => {
+    switch (statusFilter) {
+      case 'attention':
+        return apiKeys.filter(needsAttention)
+      case 'unrestricted':
+        return apiKeys.filter(isUnrestricted)
+      case 'active':
+        return apiKeys.filter(isActive)
+      case 'paused':
+        return apiKeys.filter((k) => !isActive(k))
+      default:
+        return apiKeys
+    }
+  })
+
+  const filterCounts = $derived({
+    attention: apiKeys.filter(needsAttention).length,
+    unrestricted: apiKeys.filter(isUnrestricted).length,
+  })
+
+  let searchQuery = $state('')
+
+  const filteredKeys = $derived.by(() => {
+    let list = visibleKeys
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      list = list.filter(
+        (k) =>
+          (k.name && k.name.toLowerCase().includes(q)) ||
+          (k.createdBy && k.createdBy.toLowerCase().includes(q)) ||
+          (k.lastUsedIp && k.lastUsedIp.toLowerCase().includes(q)) ||
+          (k.keyDisplay && k.keyDisplay.toLowerCase().includes(q)) ||
+          (k.key && k.key.toLowerCase().includes(q))
+      )
+    }
+    return list
+  })
+
+  const allIds = $derived(filteredKeys.map((k) => k.id))
   const allSelected = $derived(selectAllState(selectedIds, allIds) === 'all')
+
+  // The rows the bulk dialog acts on, resolved from the current selection so a
+  // filter change cannot leave the dialog holding a key that scrolled away.
+  const selectedKeys = $derived(
+    selectedIds
+      .map((id) => apiKeys.find((k) => k.id === id))
+      .filter((k): k is APIKey => Boolean(k)),
+  )
 
   // The full secret, when the server had one to give. Empty for a caller
   // authenticated with an engine client key, and for rows minted before #199
@@ -159,6 +213,16 @@
         label: `${compactTokens(used)} / ${compactTokens(quota)} tok`,
         tone: used >= quota ? 'danger' : 'info',
       })
+    }
+    if (k.balance !== undefined && k.balance !== null) {
+      if (k.balance < 0) {
+        badges.push({ label: 'Saldo: ∞', tone: 'info' })
+      } else {
+        badges.push({
+          label: `Rp ${k.balance.toLocaleString('id-ID')}`,
+          tone: k.balance <= 0 ? 'danger' : 'info',
+        })
+      }
     }
     if ((k.expiresAt ?? '') !== '') {
       badges.push({ label: isExpired(k) ? 'expired' : 'expires', tone: isExpired(k) ? 'danger' : 'info' })
@@ -287,12 +351,61 @@
       </div>
     </div>
   {:else}
+    <!-- Status filter. The table is the one place a stalled key is visible, so
+         the two states that stall silently — "needs attention" and "never
+         configured" — are one click away instead of a manual scan. -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-1.5">
+        {#each [
+          ['all', 'All', apiKeys.length],
+          ['attention', 'Needs attention', filterCounts.attention],
+          ['unrestricted', 'Unrestricted', filterCounts.unrestricted],
+          ['active', 'Active', null],
+          ['paused', 'Paused', null],
+        ] as const as [key, label, count] (key)}
+          <button
+            type="button"
+            onclick={() => (statusFilter = key)}
+            class="rounded-lg border px-2.5 py-1 text-[11px] transition-colors {statusFilter === key
+              ? 'border-brand-500/40 bg-brand-500/10 text-brand-500 font-semibold'
+              : 'border-border-subtle text-text-muted hover:bg-surface-2'}"
+          >
+            {label}{#if count !== null}<span class="ml-1 text-text-subtle">{count}</span>{/if}
+          </button>
+        {/each}
+        {#if filteredKeys.length !== apiKeys.length}
+          <span class="text-[11px] text-text-subtle">showing {filteredKeys.length} of {apiKeys.length}</span>
+        {/if}
+      </div>
+
+      <div class="relative w-full sm:w-60">
+        <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[15px] text-text-subtle">
+          search
+        </span>
+        <input
+          type="text"
+          bind:value={searchQuery}
+          placeholder="Filter by name, creator, IP..."
+          class="w-full bg-surface-2 border border-border rounded-lg pl-8 pr-3 py-1 text-[11px] text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-500"
+        />
+      </div>
+    </div>
+
     <!-- Batch bar. It replaces nothing: it only appears while something is
          selected, so the unselected table looks the same as before. -->
     {#if selectedIds.length > 0}
       <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2">
         <span class="text-xs text-text-main">{selectedIds.length} selected</span>
         <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            disabled={isBatchBusy(batchBusy, selectedIds)}
+            onclick={() => (bulkPolicyOpen = true)}
+            class="flex items-center gap-1 rounded-lg border border-brand-500/40 bg-brand-500/10 px-2 py-1 text-[11px] text-brand-500 transition-colors hover:bg-brand-500/20 disabled:opacity-50"
+          >
+            <span class="material-symbols-outlined text-[14px]">tune</span>
+            Bulk policy
+          </button>
           <button
             type="button"
             disabled={isBatchBusy(batchBusy, selectedIds)}
@@ -467,38 +580,69 @@
 
     <!-- Mobile: one card per key. -->
     <ul class="md:hidden space-y-3">
-      {#each apiKeys as k (k.id)}
+      {#if filteredKeys.length === 0}
+        <li class="py-6 text-center text-xs text-text-subtle">No key matches this filter.</li>
+      {/if}
+      {#each filteredKeys as k (k.id)}
         {@const active = isActive(k)}
+        {@const inFlight = (k.activeRequests ?? 0)}
         <li class="rounded-xl border border-border bg-surface-2/40 p-3 space-y-2.5 {active
           ? ''
           : 'opacity-70'}">
-          <div class="flex items-center gap-2 min-w-0">
-            <input
-              type="checkbox"
-              checked={selectedIds.includes(k.id)}
-              aria-label={`Select ${keyLabel(k)}`}
-              onchange={() => (selectedIds = toggleOne(selectedIds, k.id))}
-              class="mt-1 size-3.5 shrink-0 rounded border-border/60 accent-[var(--primary)] cursor-pointer"
-            />
-            <p class="text-sm font-semibold text-text-main truncate">
-              {k.name || 'Client Token'}
-            </p>
-            <!-- KeiRouter's StatusPill: a bare dot plus a label, not a
-                 filled badge. A paused key reads at a glance without
-                 spending a column on it. -->
-            <span
-              class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium {active
-                ? 'text-success'
-                : 'text-text-muted'}"
-            >
-              <span class="w-1.5 h-1.5 rounded-full {active ? 'bg-success' : 'bg-danger opacity-60'}"></span>
-              {active ? 'Active' : 'Paused'}
-            </span>
+          <div class="flex items-center justify-between gap-2 min-w-0">
+            <div class="flex items-center gap-2 min-w-0">
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(k.id)}
+                aria-label={`Select ${keyLabel(k)}`}
+                onchange={() => (selectedIds = toggleOne(selectedIds, k.id))}
+                class="size-3.5 shrink-0 rounded border-border/60 accent-[var(--primary)] cursor-pointer"
+              />
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-text-main truncate">
+                  {k.name || 'Client Token'}
+                </p>
+                <span class="text-[10px] text-text-subtle block">By: {k.createdBy || 'admin'}</span>
+              </div>
+            </div>
+
+            {#if inFlight > 0}
+              <span class="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Live ({inFlight})
+              </span>
+            {:else}
+              <span
+                class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium {active
+                  ? 'text-success'
+                  : 'text-text-muted'}"
+              >
+                <span class="w-1.5 h-1.5 rounded-full {active ? 'bg-success' : 'bg-danger opacity-60'}"></span>
+                {active ? 'Active' : 'Paused'}
+              </span>
+            {/if}
           </div>
 
           {@render secretCell(k)}
+          <div class="flex items-center gap-1.5 text-[10px] text-text-subtle font-mono">
+            <span class="material-symbols-outlined text-[12px]">router</span>
+            <span>{k.lastUsedIp || 'No IP seen'}</span>
+            {#if k.allowedIps}
+              <span class="px-1 py-0.2 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px]">IP Restricted</span>
+            {/if}
+          </div>
           {@render policyCell(k)}
-          {@render keyActions(k, true)}
+          <div class="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onclick={() => (policyKey = k)}
+              class="flex-1 py-1.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-500 text-xs font-semibold border border-brand-500/20 transition cursor-pointer flex items-center justify-center gap-1"
+            >
+              <span class="material-symbols-outlined text-[14px]">tune</span>
+              Manage Key
+            </button>
+            {@render keyActions(k, false)}
+          </div>
         </li>
       {/each}
     </ul>
@@ -524,8 +668,16 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-border/40">
-          {#each apiKeys as k (k.id)}
+          {#if filteredKeys.length === 0}
+            <tr>
+              <td colspan="5" class="py-6 text-center text-xs text-text-subtle">
+                No key matches this filter.
+              </td>
+            </tr>
+          {/if}
+          {#each filteredKeys as k (k.id)}
             {@const active = isActive(k)}
+            {@const inFlight = (k.activeRequests ?? 0)}
             <tr class="align-top transition hover:bg-surface-2/40 {active ? '' : 'opacity-70'}">
               <td class="py-3 pl-3">
                 <input
@@ -538,23 +690,45 @@
               </td>
 
               <td class="py-3 px-3">
-                <div class="flex items-center gap-2 min-w-0">
-                  <p class="text-sm font-semibold text-text-main truncate max-w-[150px]">
+                <div class="flex flex-col gap-1 min-w-0 max-w-[200px]">
+                  <p class="text-sm font-semibold text-text-main truncate">
                     {k.name || 'Client Token'}
                   </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 text-[11px] font-medium {active
-                      ? 'text-success'
-                      : 'text-text-muted'}"
-                  >
-                    <span class="w-1.5 h-1.5 rounded-full {active ? 'bg-success' : 'bg-danger opacity-60'}"></span>
-                    {active ? 'Active' : 'Paused'}
-                  </span>
+                  <div class="flex items-center gap-2 text-[10px] text-text-subtle">
+                    <span>By: <strong class="text-text-muted">{k.createdBy || 'admin'}</strong></span>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-0.5">
+                    {#if inFlight > 0}
+                      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        Live ({inFlight} in-flight)
+                      </span>
+                    {:else if active}
+                      <span class="inline-flex items-center gap-1 text-[10px] font-medium text-text-muted">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500/70"></span>
+                        Active
+                      </span>
+                    {:else}
+                      <span class="inline-flex items-center gap-1 text-[10px] font-medium text-text-muted">
+                        <span class="w-1.5 h-1.5 rounded-full bg-danger opacity-60"></span>
+                        Paused
+                      </span>
+                    {/if}
+                  </div>
                 </div>
               </td>
 
               <td class="py-3 px-3">
                 {@render secretCell(k)}
+                <div class="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-subtle font-mono">
+                  <span class="material-symbols-outlined text-[13px] text-text-subtle">router</span>
+                  <span class="truncate">{k.lastUsedIp || 'No IP seen'}</span>
+                  {#if k.allowedIps}
+                    <span class="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px]">
+                      Whitelisted
+                    </span>
+                  {/if}
+                </div>
               </td>
 
               <td class="py-3 px-3">
@@ -562,7 +736,15 @@
               </td>
 
               <td class="py-3 px-3">
-                <div class="flex items-center justify-end">
+                <div class="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onclick={() => (policyKey = k)}
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-500 text-[11px] font-semibold border border-brand-500/20 transition cursor-pointer"
+                  >
+                    <span class="material-symbols-outlined text-[13px]">tune</span>
+                    Manage
+                  </button>
                   {@render keyActions(k)}
                 </div>
               </td>
@@ -582,6 +764,18 @@
       // The rename lives in the same dialog, so the list is stale until the
       // parent re-reads it.
       policyKey = null
+      onRefresh?.()
+    }}
+  />
+{/if}
+
+{#if bulkPolicyOpen}
+  <ApiKeysBulkPolicyModal
+    keys={selectedKeys}
+    onClose={() => (bulkPolicyOpen = false)}
+    onSaved={() => {
+      bulkPolicyOpen = false
+      selectedIds = []
       onRefresh?.()
     }}
   />

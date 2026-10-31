@@ -23,6 +23,15 @@ func stubTailscaleHost(t *testing.T, bin string, exec func(ctx context.Context, 
 	})
 }
 
+func stubCloudflaredHost(t *testing.T, bin string) {
+	t.Helper()
+	origBin := cloudflaredBinFn
+	cloudflaredBinFn = func() string { return bin }
+	t.Cleanup(func() {
+		cloudflaredBinFn = origBin
+	})
+}
+
 func TestHandleTunnelEndpoints(t *testing.T) {
 	repo, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -89,6 +98,7 @@ func TestHandleTunnelEndpoints(t *testing.T) {
 	})
 
 	t.Run("TunnelEnable_ReturnsCleanError", func(t *testing.T) {
+		stubCloudflaredHost(t, "")
 		req := httptest.NewRequest(http.MethodPost, "/api/tunnel/enable", nil)
 		rec := httptest.NewRecorder()
 

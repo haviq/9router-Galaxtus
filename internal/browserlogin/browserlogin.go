@@ -108,6 +108,18 @@ type Result struct {
 // The list is the reference bridge's: Chrome, Chromium, Brave and Edge, in
 // that order, on the platform's own layout first and the PATH second.
 func FindBrowser() string {
+	if custom := os.Getenv("ROUTER_BROWSER_PATH"); custom != "" {
+		if info, err := os.Stat(custom); err == nil && !info.IsDir() {
+			return custom
+		}
+	}
+	if custom := os.Getenv("BROWSER"); custom != "" {
+		if info, err := os.Stat(custom); err == nil && !info.IsDir() {
+			return custom
+		}
+	}
+
+	// First look on PATH prioritizing Brave, then Chrome, Edge
 	for _, name := range browserNames() {
 		if path, err := exec.LookPath(name); err == nil {
 			return path
@@ -124,11 +136,11 @@ func FindBrowser() string {
 // browserNames are the executables to look for on the PATH.
 func browserNames() []string {
 	if runtime.GOOS == "windows" {
-		return []string{"chrome", "msedge", "brave", "chromium"}
+		return []string{"brave", "chrome", "msedge", "chromium"}
 	}
 	return []string{
-		"google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
-		"brave-browser", "microsoft-edge", "microsoft-edge-stable",
+		"brave-browser", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+		"microsoft-edge", "microsoft-edge-stable",
 	}
 }
 
@@ -137,19 +149,40 @@ func platformBrowserPaths() []string {
 	switch runtime.GOOS {
 	case "darwin":
 		return []string{
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 			"/Applications/Chromium.app/Contents/MacOS/Chromium",
-			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 			"/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
 		}
 	case "windows":
-		return []string{
-			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
-			`C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`,
+		var candidates []string
+		programFiles := os.Getenv("ProgramFiles")
+		if programFiles == "" {
+			programFiles = `C:\Program Files`
 		}
+		programFilesX86 := os.Getenv("ProgramFiles(x86)")
+		if programFilesX86 == "" {
+			programFilesX86 = `C:\Program Files (x86)`
+		}
+		localAppData := os.Getenv("LOCALAPPDATA")
+
+		// Prioritize Brave if installed, then Chrome, then Edge
+		candidates = append(candidates,
+			filepath.Join(programFiles, `BraveSoftware\Brave-Browser\Application\brave.exe`),
+			filepath.Join(programFilesX86, `BraveSoftware\Brave-Browser\Application\brave.exe`),
+			filepath.Join(programFiles, `Google\Chrome\Application\chrome.exe`),
+			filepath.Join(programFilesX86, `Google\Chrome\Application\chrome.exe`),
+			filepath.Join(programFiles, `Microsoft\Edge\Application\msedge.exe`),
+			filepath.Join(programFilesX86, `Microsoft\Edge\Application\msedge.exe`),
+		)
+		if localAppData != "" {
+			candidates = append(candidates,
+				filepath.Join(localAppData, `BraveSoftware\Brave-Browser\Application\brave.exe`),
+				filepath.Join(localAppData, `Google\Chrome\Application\chrome.exe`),
+			)
+		}
+		return candidates
 	default:
 		return []string{
 			"/usr/bin/google-chrome",

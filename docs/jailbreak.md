@@ -15,11 +15,24 @@ A preset is a prompt plus two optional settings:
 
 - **Prompt** — the text injected ahead of the original content. Paste an
   `agents.md` file or type it inline; up to 512 KB.
+- **System injection mode** — how the prompt reaches the request body:
+  - **Prepend** (default) — ahead of the existing system content, original
+    intact after it.
+  - **Append** — after the existing system content, so a preset that refines an
+    operator instruction follows it instead of leading it.
+  - **Replace** — the existing system content is dropped and only the prompt is
+    sent, for a hard system override.
 - **Relax Gemini safety filters** — when on, requests to Gemini models also
   carry `safetySettings` with `BLOCK_NONE` through the official API field. A
   body that already has its own `safetySettings` is left untouched.
 - **Source file name** — display only, so you can tell an uploaded document
   from a typed one.
+
+The inject mode is wire-agnostic: it applies to both the OpenAI `messages`
+shape and the Claude top-level `system` (a string or a block array). A body with
+no system content at all still receives the prompt as a leading system message,
+whatever the mode. An unset mode means **Prepend**, so an older preset keeps its
+original behaviour.
 
 The **Default document** is the preset named `default`. It is what a model gets
 when it is armed without naming a preset. Create more presets for other
@@ -220,6 +233,29 @@ field: edit it in the preset editor, or set it by hand on a preset you typed
 yourself. It changes nothing about matching — keywords and bindings decide
 that — it is there so you can find the right file in a long list.
 
+### The SYADAGENTIC pack
+
+One click on **Install SYADAGENTIC pack** in the import dialog lands the
+[`Sekolah76/syadagentic`](https://github.com/Sekolah76/syadagentic)
+prompt-injection collection as presets.
+
+That collection is not one file per model — it is a single
+`prompt-injection/templates.md` holding 40 numbered techniques (`## T1. …`
+through `## T119. …`). The generic importer would store it as one preset named
+after the file; this endpoint parses the `T<N>. TITLE` sections instead, so each
+technique becomes its own preset:
+
+- **Name** — the number and title (`T104 · DAN (Do Anything Now) ROLEPLAY
+  FRAMING`), **kind** `SYADAGENTIC` so the library groups the pack.
+- **Prompt** — the section verbatim, subheadings included.
+- **Keywords** — none. A technique is not bound to a model by name, so arming it
+  stays your decision on the Prompt Injection page rather than a guess.
+
+Re-running the install refreshes the pack in place: the same technique ids are
+overwritten, so the library never grows a duplicate copy. `POST
+/api/jailbreak/import/syadagentic` (no body) returns the same
+`{ok, source, imported, refused}` shape the generic import uses.
+
 ## 5. Limits
 
 | Thing | Limit |
@@ -227,7 +263,6 @@ that — it is there so you can find the right file in a long list.
 | Prompt size | 512 KB |
 | Rules per list (keywords or excludes) | 20 |
 | Rule length | 200 characters |
-
 A rule the gateway would reject is refused at save time with the reason, so a
 typo never becomes a preset that silently stops matching.
 
@@ -242,14 +277,49 @@ typo never becomes a preset that silently stops matching.
 | `DELETE` | `/api/jailbreak/presets/{id}` | delete a preset (unbinds its models) |
 | `GET` | `/api/jailbreak/models` | list exact bindings |
 | `PUT` | `/api/jailbreak/models` | bind or unbind one id |
+| `POST` | `/api/jailbreak/models/status` | resolve the catalog (or a posted `{"ids":[…]}`) and report each id's verdict plus per-verdict totals |
 | `GET` | `/api/jailbreak/excludes` | the global exclude list |
 | `PUT` | `/api/jailbreak/excludes` | replace the global exclude list |
 | `POST` | `/api/jailbreak/import` | import a repository, a URL, or one file as presets (`{"target":"owner/repo"}`) |
+| `POST` | `/api/jailbreak/import/syadagentic` | install the SYADAGENTIC technique pack (T1–T119) as one preset per technique |
 | `POST` | `/api/jailbreak/presets/upload` | create one preset from an uploaded file (`multipart/form-data`, field `file`) |
 
 The model id travels in the request body rather than the path, because ids
 contain `/` and `:` (`tkh/mimo-v2.6-flash:free`) and a path parameter stores
 them still-encoded.
+
+### Model Status
+
+The **Model Status** sidebar page sweeps every routable id through the same
+resolver a live request uses, so the verdict it shows is the verdict the request
+path would produce — keyword coverage, combo legs and both deny lists included,
+not just the exact bindings. It reads two ways:
+
+- **Heatmap** (default) — every model as a square, grouped by provider, the way
+  a GitHub contribution graph reads. One row per provider, one square per model,
+  so the whole catalog is visible at a glance; click a square to ping that model.
+  A square is green when a probe just succeeded, red when it failed, terracotta
+  when the model is injecting, amber when a deny list excludes it, and grey when
+  it is off or untested.
+- **List** — one row per model with the full detail (verdict, reason, preset,
+  kind, inject mode, usage, measured latency, and a per-row ping button).
+
+Each row reports:
+
+- **Verdict** — `On` (injected), `Excluded` (a deny list refuses it) or `Off`
+  (nothing arms it).
+- **Reason** — which rule decided it, and the id it matched.
+- **Preset** — the winning preset, with its instruction-file **kind**, its
+  **inject mode** (`prepend`, `append`, `replace`), and its lifetime **hit
+  count**, so an operator can see what would be applied and whether the preset
+  earns its keep without opening it.
+- **Latency** — the measured round trip from a real probe through the provider,
+  on the server's own clock (see the probe row below).
+
+`POST /api/jailbreak/models/status` returns `{"models":[…],"counts":{…}}`; a
+posted `{"ids":[…]}` limits the sweep, and an absent or empty list resolves the
+whole catalog. Each row carries the resolver's `injected`/`reason`/`presetId`
+fields plus `status`, `presetKind`, `injectMode` and `usage`.
 
 ## 7. Checking it works
 

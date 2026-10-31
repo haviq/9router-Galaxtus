@@ -1303,12 +1303,64 @@
     renewingConnId = conn.id
     try {
       await api.renewDeepSeekCredential(conn.id)
-      alert('The credential was renewed.')
+      alert('The credential was renewed successfully.')
       onRefresh()
     } catch (err) {
       alert(`The renewal failed: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       renewingConnId = null
+    }
+  }
+
+  let quickPasteConn = $state<ProviderConnection | null>(null)
+  let quickPasteToken = $state('')
+  let quickPasteCookie = $state('')
+  let quickPasteSaving = $state(false)
+  let quickPasteError = $state('')
+
+  function openQuickPaste(conn: ProviderConnection) {
+    quickPasteConn = conn
+    quickPasteError = ''
+    try {
+      const raw = JSON.parse(conn.data || '{}')
+      quickPasteToken = raw.apiKey || ''
+      quickPasteCookie = raw.providerSpecificData?.deepSeekCookie || ''
+    } catch {
+      quickPasteToken = ''
+      quickPasteCookie = ''
+    }
+  }
+
+  async function handleSaveQuickPaste() {
+    if (!quickPasteConn || !quickPasteToken.trim()) return
+    quickPasteSaving = true
+    quickPasteError = ''
+    try {
+      let cleanToken = quickPasteToken.trim()
+      try {
+        if (cleanToken.startsWith('{')) {
+          const parsed = JSON.parse(cleanToken)
+          if (parsed && parsed.value) cleanToken = parsed.value
+        } else if (cleanToken.startsWith('"') && cleanToken.endsWith('"')) {
+          cleanToken = JSON.parse(cleanToken)
+        }
+      } catch {
+        /* keep raw token string */
+      }
+
+      await api.updateConnection(quickPasteConn.id, {
+        apiKey: cleanToken,
+        providerSpecificData: {
+          deepSeekCookie: quickPasteCookie.trim()
+        },
+        testStatus: 'ok'
+      } as any)
+      quickPasteConn = null
+      onRefresh()
+    } catch (err: any) {
+      quickPasteError = err.message || 'Failed to update credentials'
+    } finally {
+      quickPasteSaving = false
     }
   }
 
@@ -3913,14 +3965,48 @@
                     </div>
                     <!-- Error message block -->
                     {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error')}
-                      <div class="mt-1.5 flex items-start gap-1.5 text-xs text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded-md border border-red-500/20 max-w-full">
-                        <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
-                        <span class="break-words font-medium leading-relaxed">
-                          {#if conn.lastErrorModel}
-                            <span class="font-mono text-[11px] mr-1">[{conn.lastErrorModel}]</span>
-                          {/if}
-                          {lastErr}
-                        </span>
+                      <div class="mt-1.5 flex flex-col gap-2 text-xs text-red-500 bg-red-500/10 p-2.5 rounded-lg border border-red-500/20 max-w-full">
+                        <div class="flex items-start gap-1.5">
+                          <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+                          <span class="break-words font-medium leading-relaxed">
+                            {#if conn.lastErrorModel}
+                              <span class="font-mono text-[11px] mr-1">[{conn.lastErrorModel}]</span>
+                            {/if}
+                            {lastErr}
+                          </span>
+                        </div>
+                        {#if isDeepSeekWeb}
+                          <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-red-500/20">
+                            <a
+                              href="https://chat.deepseek.com"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition cursor-pointer shadow-sm no-underline"
+                            >
+                              <span class="material-symbols-outlined text-sm">open_in_new</span>
+                              <span>Buka Tab DeepSeek</span>
+                            </a>
+                            <button
+                              type="button"
+                              onclick={() => openQuickPaste(conn)}
+                              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer shadow-sm"
+                            >
+                              <span class="material-symbols-outlined text-sm">content_paste</span>
+                              <span>Quick Paste Token</span>
+                            </button>
+                            <button
+                              type="button"
+                              onclick={() => renewDeepSeekCredential(conn)}
+                              disabled={renewingConnId === conn.id}
+                              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-2 hover:bg-surface-3 text-text-muted border border-border text-xs transition cursor-pointer disabled:opacity-50"
+                            >
+                              <span class="material-symbols-outlined text-sm {renewingConnId === conn.id ? 'animate-spin' : ''}">
+                                {renewingConnId === conn.id ? 'progress_activity' : 'refresh'}
+                              </span>
+                              <span>{renewingConnId === conn.id ? 'Membuka Jendela...' : 'Auto-Renew (Jendela Baru)'}</span>
+                            </button>
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                     <!-- Proxy detail line: pool/legacy label, masked endpoint, no_proxy -->
@@ -5309,6 +5395,154 @@
           class="px-3 py-1.5 text-xs font-semibold rounded-[8px] bg-surface-2 hover:bg-surface-3 text-text-main border border-border cursor-pointer"
         >
           {isApplyingProxy ? 'Stop' : 'Cancel'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Renewing Browser Login Notification Modal -->
+{#if renewingConnId}
+  <div class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div class="w-full max-w-md bg-surface-1 border border-brand-500/40 rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 rounded-xl bg-brand-500/10 text-brand-500 border border-brand-500/20">
+          <span class="material-symbols-outlined text-2xl animate-spin">progress_activity</span>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-text-main">Menunggu Login di Browser...</h3>
+          <p class="text-xs text-text-muted">Jendela browser (Brave / Chrome) telah dibuka</p>
+        </div>
+      </div>
+
+      <div class="p-3.5 rounded-xl bg-surface-2 border border-border text-xs text-text-muted space-y-2 leading-relaxed">
+        <p>1. Periksa taskbar Anda, buka jendela browser <strong>Brave / Chrome</strong> yang baru dibuka.</p>
+        <p>2. Login ke akun DeepSeek hingga halaman <strong>chat.deepseek.com</strong> terbuka normal.</p>
+        <p>3. 9Router otomatis membaca <code>userToken</code> + cookies dan menyimpan ke database.</p>
+      </div>
+
+      <div class="flex items-center justify-between pt-2">
+        <button
+          type="button"
+          onclick={() => {
+            const conn = providerConnections.find(c => c.id === renewingConnId)
+            renewingConnId = null
+            if (conn) openQuickPaste(conn)
+          }}
+          class="text-xs text-brand-500 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
+        >
+          <span class="material-symbols-outlined text-sm">content_paste</span>
+          <span>Atau Quick Paste Token</span>
+        </button>
+
+        <button
+          type="button"
+          onclick={() => renewingConnId = null}
+          class="px-3.5 py-1.5 text-xs text-text-muted hover:text-text-main rounded-lg border border-border bg-surface-2 transition cursor-pointer"
+        >
+          Tutup Status
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Quick Paste DeepSeek Web Modal -->
+{#if quickPasteConn}
+  <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div class="w-full max-w-lg bg-surface-1 border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      <div class="p-4 border-b border-border flex items-center justify-between bg-surface-2/50">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-brand-500">key</span>
+          <h3 class="text-sm font-bold text-text-main">Quick Update DeepSeek Web Token</h3>
+        </div>
+        <button
+          type="button"
+          onclick={() => (quickPasteConn = null)}
+          class="text-text-muted hover:text-text-main p-1 rounded-md"
+        >
+          <span class="material-symbols-outlined text-lg">close</span>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4">
+        {#if quickPasteError}
+          <div class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-500">
+            {quickPasteError}
+          </div>
+        {/if}
+
+        <div class="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 space-y-2.5">
+          <div class="text-xs font-bold text-emerald-400 flex items-center justify-between">
+            <span class="flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-sm">sync</span>
+              Opsi 1: Auto-Sync Langsung dari Tab DeepSeek (1 Klik di Console)
+            </span>
+            <a href="https://chat.deepseek.com" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:underline flex items-center gap-1 text-[11px] font-semibold">
+              Buka chat.deepseek.com <span class="material-symbols-outlined text-xs">open_in_new</span>
+            </a>
+          </div>
+          <div class="text-[11px] text-text-muted leading-relaxed">
+            Karena batasan keamanan browser (Same-Origin Policy), 9Router tidak dapat membaca cookie tab lain secara otomatis. Cukup buka Console (<strong>F12</strong>) di tab <strong>chat.deepseek.com</strong> lalu paste baris ini:
+          </div>
+          <div class="p-2 rounded bg-black/60 text-[11px] font-mono text-emerald-300 select-all border border-emerald-500/30 break-all cursor-pointer shadow-inner">
+            fetch('http://localhost:20130/api/providers/deepseek-web/quick-sync',&#123;method:'POST',headers:&#123;'Content-Type':'application/json'&#125;,body:JSON.stringify(&#123;userToken:localStorage.getItem('userToken'),cookie:document.cookie&#125;)&#125;).then(r=&gt;r.json()).then(d=&gt;alert('✅ 9Router: '+d.message)).catch(e=&gt;alert('❌ '+e))
+          </div>
+          <div class="text-[10px] text-text-muted">
+            *Script ini membaca <code>userToken</code> dan <code>aws-waf-token</code> langsung dari session aktif Anda dan mengirimkannya ke 9Router.
+          </div>
+        </div>
+
+        <div class="text-xs font-semibold text-text-muted pt-1">
+          Opsi 2: Salin Manual ke Form di Bawah Ini
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-text-muted mb-1">
+            User Token <span class="text-red-500">*</span> (Application &rarr; Local Storage &rarr; userToken)
+          </label>
+          <input
+            type="text"
+            bind:value={quickPasteToken}
+            placeholder="eyJh..."
+            class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-text-muted mb-1">
+            Cookies (Network Tab &rarr; Request Headers &rarr; Cookie, terutama aws-waf-token)
+          </label>
+          <textarea
+            bind:value={quickPasteCookie}
+            rows="3"
+            placeholder="aws-waf-token=...; HWWAFSESID=..."
+            class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-xs font-mono text-text-main focus:outline-none focus:border-brand-500 resize-y"
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-border bg-surface-2/40 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onclick={() => (quickPasteConn = null)}
+          class="px-3.5 py-1.5 text-xs text-text-muted hover:text-text-main rounded-lg border border-border bg-surface-2 transition cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onclick={handleSaveQuickPaste}
+          disabled={quickPasteSaving || !quickPasteToken.trim()}
+          class="px-4 py-1.5 text-xs font-semibold text-white bg-brand-500 hover:bg-brand-600 rounded-lg shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          {#if quickPasteSaving}
+            <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            <span>Saving...</span>
+          {:else}
+            <span class="material-symbols-outlined text-sm">save</span>
+            <span>Update & Reconnect</span>
+          {/if}
         </button>
       </div>
     </div>

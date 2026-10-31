@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "9Router Token Bridge",
+  "version": "1.0.0",
+  "description": "Auto-syncs session tokens from chat.deepseek.com to 9Router with zero manual work",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "http://localhost:20130/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+

@@ -26,6 +26,7 @@
   import ModelPickerModal from './ModelPickerModal.svelte'
   import CapacityAdapterSection from './CapacityAdapterSection.svelte'
   import ConfirmModal from '../../lib/ui/ConfirmModal.svelte'
+  import ModelParametersModal from '../ModelParametersModal.svelte'
   import { copyToClipboard } from '../../lib/clipboard'
   interface Props {
     combos?: Combo[]
@@ -75,6 +76,15 @@
   let showModelPicker = $state(false)
   let modelPickerTarget = $state<'combo' | 'vision' | 'audio' | 'judge' | 'router'>('combo')
   let policyCombo = $state<Combo | null>(null)
+
+  // Parameters Modal state
+  let paramsModalTarget = $state<string>('')
+  let showParamsModal = $state(false)
+
+  function openParamsModal(combo: Combo) {
+    paramsModalTarget = combo.name
+    showParamsModal = true
+  }
 
   // Confirm Delete Modal state (upstream confirmState parity). Carries the ids
   // to remove.
@@ -603,6 +613,7 @@
             onOpenPolicyModal={(c) => (policyCombo = c)}
             onCopy={copyName}
             onEdit={openEditModal}
+            onConfigureParameters={openParamsModal}
             onDelete={(c) => (confirmState = { name: c.name, ids: [c.id] })}
             isSelected={selectedIds.has(combo.id)}
             onToggleSelect={toggleSelect}
@@ -662,6 +673,14 @@
 />
 
 <!-- Confirm Delete Modal (upstream ConfirmModal parity) -->
+<!-- Parameters Override Modal -->
+<ModelParametersModal
+  bind:isOpen={showParamsModal}
+  target={paramsModalTarget}
+  targetType="combo"
+  onClose={() => { showParamsModal = false; paramsModalTarget = '' }}
+/>
+
 <ConfirmModal
   isOpen={!!confirmState}
   title="Delete Combo"

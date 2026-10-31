@@ -82,6 +82,23 @@ type APIKey struct {
 	// F-3 Plans: id of the reusable policy template this key inherits from.
 	// Empty means no plan; plan values are defaults the key can override.
 	PlanID *string `json:"planId,omitempty"`
+	// Creator & IP Management
+	CreatedBy  *string `json:"createdBy,omitempty"`
+	LastUsedIP *string `json:"lastUsedIp,omitempty"`
+	AllowedIPs *string `json:"allowedIps,omitempty"`
+	// Balance represents prepaid credits/saldo (nil or < 0 = unlimited)
+	Balance    *float64 `json:"balance,omitempty"`
+}
+
+// APIKeyClient represents an IP and user-agent client audit record for an API key.
+type APIKeyClient struct {
+	APIKeyID     string `json:"apiKeyId"`
+	IP           string `json:"ip"`
+	UserAgent    string `json:"userAgent"`
+	RequestCount int    `json:"requestCount"`
+	FirstSeenAt  string `json:"firstSeenAt"`
+	LastSeenAt   string `json:"lastSeenAt"`
+	IsLive       bool   `json:"isLive,omitempty"`
 }
 
 // Combo represents a multi-model routing combinated alias.

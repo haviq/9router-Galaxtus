@@ -100,6 +100,11 @@ func (h *DashboardHandler) HandleGetApiKeys(w http.ResponseWriter, r *http.Reque
 			// exhausted key looked untouched and every untouched one looked
 			// exhausted.
 			"usedTokens": apiKeyUsedTokens(r.Context(), h.Repo, k.ID),
+			"createdBy":  stringOrDefault(k.CreatedBy, "admin"),
+			"lastUsedIp": stringOrEmpty(k.LastUsedIP),
+			"allowedIps": stringOrEmpty(k.AllowedIPs),
+			"activeRequests": activeReqsFor(k.ID),
+			"activeIps":      activeIPsFor(k.ID),
 		})
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, sanitized)
@@ -198,10 +203,12 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	defer r.Body.Close()
 
 	var req struct {
-		ID        string `json:"id"`
-		Key       string `json:"key"`
-		Name      string `json:"name"`
-		MachineID string `json:"machineId"`
+		ID         string `json:"id"`
+		Key        string `json:"key"`
+		Name       string `json:"name"`
+		MachineID  string `json:"machineId"`
+		CreatedBy  string `json:"createdBy"`
+		AllowedIPs string `json:"allowedIps"`
 	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -220,6 +227,14 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	if err := h.Repo.CreateApiKey(req.ID, req.Key, req.Name, req.MachineID); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	creator := req.CreatedBy
+	if creator == "" {
+		creator = "admin"
+	}
+	_ = h.Repo.SetApiKeyCreatedBy(req.ID, creator)
+	if req.AllowedIPs != "" {
+		_ = h.Repo.SetApiKeyAllowedIPs(req.ID, req.AllowedIPs)
 	}
 
 	// The secret is stored in the clear so the dashboard can reveal and copy
@@ -410,3 +425,55 @@ func (h *DashboardHandler) HandleToggleApiKey(w http.ResponseWriter, r *http.Req
 		"isActive": newStatus,
 	})
 }
+
+func stringOrDefault(v *string, def string) string {
+	if v == nil || *v == "" {
+		return def
+	}
+	return *v
+}
+
+func activeReqsFor(keyID string) int {
+	reqs, _, _, _ := keikey.DefaultLiveTracker().GetStats(keyID)
+	return reqs
+}
+
+func activeIPsFor(keyID string) []string {
+	_, ips, _, _ := keikey.DefaultLiveTracker().GetStats(keyID)
+	if ips == nil {
+		return []string{}
+	}
+	return ips
+}
+
+// HandleGetApiKeyClients returns connected client IPs and activity for an API key.
+func (h *DashboardHandler) HandleGetApiKeyClients(w http.ResponseWriter, r *http.Request) {
+	id := getURLParam(r, "id")
+	if id == "" {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing apiKey id")
+		return
+	}
+
+	clients, err := h.Repo.GetApiKeyClients(id)
+	if err != nil {
+		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	tracker := keikey.DefaultLiveTracker()
+	for i := range clients {
+		clients[i].IsLive = tracker.IsIPActive(id, clients[i].IP)
+	}
+
+	activeReqs, activeIPs, lastIP, lastAt := tracker.GetStats(id)
+
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"apiKeyId":       id,
+		"activeRequests": activeReqs,
+		"activeIps":      activeIPs,
+		"lastUsedIp":     lastIP,
+		"lastUsedAt":     lastAt,
+		"clients":        clients,
+	})
+}
+

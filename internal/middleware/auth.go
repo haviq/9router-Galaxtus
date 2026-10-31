@@ -4,9 +4,11 @@ import (
 	"9router/proxy/internal/log"
 	"context"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
+	"9router/proxy/internal/auth"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/keikey"
@@ -27,6 +29,19 @@ func RequireApiKey(repo *db.Repo) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKeyString := ExtractApiKey(r)
 			if apiKeyString == "" {
+				// Allow requests authenticated via dashboard session (or local dashboard when login not required)
+				if !auth.RequireLogin(repo) || auth.SessionValid(r) {
+					dashName := "Dashboard Session"
+					dashKey := &models.APIKey{
+						ID:       "dashboard-session",
+						Name:     &dashName,
+						IsActive: 1,
+					}
+					ctx := context.WithValue(r.Context(), ApiKeyContextKey, dashKey)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+
 				handlerutil.WriteJSONError(w, http.StatusUnauthorized, "Authentication required. Provide an API key via Authorization: Bearer <key> header or ?key=<key> query parameter.")
 				return
 			}
@@ -69,17 +84,23 @@ func RequireApiKey(repo *db.Repo) func(http.Handler) http.Handler {
 				}
 			}
 
-			// F-14 usage accounting. Best-effort: the row write must never turn
-			// a served request into a failure, and a failed write only means the
-			// resale bookkeeping undercounts by one.
-			//
-			// It runs after every check that can reject, so a request refused for
-			// a bad key, a disabled key, or an expired contract is never counted
-			// as usage.
-			if apiKeyObj.ID != "" {
-				if uErr := repo.UpdateApiKeyUsage(apiKeyObj.ID); uErr != nil {
-					log.Warn("auth", "api key usage update failed", "key", apiKeyObj.ID, "error", uErr)
+			// Caller IP detection & allowlist enforcement
+			clientIP := auth.LoginClientIP(r)
+			if apiKeyObj.AllowedIPs != nil && *apiKeyObj.AllowedIPs != "" {
+				if !isIPAllowed(clientIP, *apiKeyObj.AllowedIPs) {
+					handlerutil.WriteJSONError(w, http.StatusForbidden, "Access denied: IP address "+clientIP+" is not permitted for this API key.")
+					return
 				}
+			}
+
+			// Live tracking: register in-flight request and active caller IP
+			cleanup := keikey.DefaultLiveTracker().TrackRequest(apiKeyObj.ID, clientIP)
+			defer cleanup()
+
+			// High-throughput async telemetry: queues usage & client telemetry to background worker,
+			// eliminating hot-path SQLite write lock contention when swarmed by concurrent requests.
+			if apiKeyObj.ID != "" {
+				keikey.EnqueueTelemetry(repo, apiKeyObj.ID, clientIP, r.UserAgent())
 			}
 
 			// Inject API Key info into the request context for downstream handlers/logging
@@ -186,3 +207,41 @@ func ExtractApiKey(r *http.Request) string {
 
 	return ""
 }
+
+// isIPAllowed checks whether clientIP matches any entry in a comma-separated
+// allowedIPs list. Entries can be single IPs or CIDR subnets (e.g. 192.168.1.0/24).
+func isIPAllowed(clientIP, allowedIPs string) bool {
+	allowedIPs = strings.TrimSpace(allowedIPs)
+	if allowedIPs == "" {
+		return true
+	}
+	clientIP = strings.TrimSpace(clientIP)
+	clientAddr, err := netip.ParseAddr(clientIP)
+	hasValidAddr := err == nil
+	if hasValidAddr {
+		clientAddr = clientAddr.Unmap()
+	}
+
+	entries := strings.Split(allowedIPs, ",")
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if entry == clientIP {
+			return true
+		}
+		if prefix, err := netip.ParsePrefix(entry); err == nil && hasValidAddr {
+			if prefix.Contains(clientAddr) {
+				return true
+			}
+		}
+		if addr, err := netip.ParseAddr(entry); err == nil && hasValidAddr {
+			if addr.Unmap() == clientAddr {
+				return true
+			}
+		}
+	}
+	return false
+}
+

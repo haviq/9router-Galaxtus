@@ -175,3 +175,86 @@ func applyProviderOverrides(s *SettingsData, raw map[string]any) {
 		s.ProviderOverrides[k] = ProviderOverrides{Headers: stringMap(entry["headers"])}
 	}
 }
+
+// applyModelParameters parses per-model and per-combo parameter overrides.
+func applyModelParameters(s *SettingsData, raw map[string]any) {
+	mpRaw, ok := raw["modelParameters"].(map[string]any)
+	if !ok {
+		return
+	}
+	s.ModelParameters = make(map[string]ModelParameters, len(mpRaw))
+	for target, val := range mpRaw {
+		vm, ok := val.(map[string]any)
+		if !ok {
+			continue
+		}
+		var p ModelParameters
+
+		// temperature
+		if t, ok := vm["temperature"].(float64); ok {
+			p.Temperature = &t
+		}
+
+		// top_p / topP
+		if tp, ok := vm["topP"].(float64); ok {
+			p.TopP = &tp
+		} else if tp, ok := vm["top_p"].(float64); ok {
+			p.TopP = &tp
+		}
+
+		// top_k / topK
+		if tk, ok := vm["topK"].(float64); ok {
+			itk := int(tk)
+			p.TopK = &itk
+		} else if tk, ok := vm["top_k"].(float64); ok {
+			itk := int(tk)
+			p.TopK = &itk
+		}
+
+		// repetition_penalty / repetitionPenalty
+		if rp, ok := vm["repetitionPenalty"].(float64); ok {
+			p.RepetitionPenalty = &rp
+		} else if rp, ok := vm["repetition_penalty"].(float64); ok {
+			p.RepetitionPenalty = &rp
+		}
+
+		// frequency_penalty / frequencyPenalty
+		if fp, ok := vm["frequencyPenalty"].(float64); ok {
+			p.FrequencyPenalty = &fp
+		} else if fp, ok := vm["frequency_penalty"].(float64); ok {
+			p.FrequencyPenalty = &fp
+		}
+
+		// presence_penalty / presencePenalty
+		if pp, ok := vm["presencePenalty"].(float64); ok {
+			p.PresencePenalty = &pp
+		} else if pp, ok := vm["presence_penalty"].(float64); ok {
+			p.PresencePenalty = &pp
+		}
+
+		// max_tokens / maxTokens
+		if mt, ok := vm["maxTokens"].(float64); ok && mt > 0 {
+			imt := int(mt)
+			p.MaxTokens = &imt
+		} else if mt, ok := vm["max_tokens"].(float64); ok && mt > 0 {
+			imt := int(mt)
+			p.MaxTokens = &imt
+		}
+
+		// context_length / contextLength
+		if cl, ok := vm["contextLength"].(float64); ok && cl > 0 {
+			icl := int(cl)
+			p.ContextLength = &icl
+		} else if cl, ok := vm["context_length"].(float64); ok && cl > 0 {
+			icl := int(cl)
+			p.ContextLength = &icl
+		}
+
+		// stream
+		if st := handlerutil.GetString(vm, "stream"); st != "" {
+			p.Stream = &st
+		}
+
+		s.ModelParameters[target] = p
+	}
+}

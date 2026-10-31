@@ -1,12 +1,14 @@
 package dashboard
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
 
 	json "encoding/json/v2"
 
+	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 )
 
@@ -215,6 +217,36 @@ func TestValidateDeepSeekWebSendsTheConfiguredCookie(t *testing.T) {
 	}
 	if got := (*calls)[0].headers.Get("Cookie"); !strings.Contains(got, "aws-waf-token=def") {
 		t.Errorf("probe Cookie = %q, want the site's own cookie", got)
+	}
+}
+
+func TestValidateDeepSeekWebSendsEdgeRelayHeaders(t *testing.T) {
+	calls := withProbeStub(t, func(_ int, p capturedProbe) (int, []byte, error) {
+		if p.headers.Get("x-relay-target") != "https://chat.deepseek.com" {
+			t.Errorf("x-relay-target = %q, want https://chat.deepseek.com", p.headers.Get("x-relay-target"))
+		}
+		if p.headers.Get("x-relay-path") != "/api/v0/users/current" {
+			t.Errorf("x-relay-path = %q, want /api/v0/users/current", p.headers.Get("x-relay-path"))
+		}
+		if p.url != "https://my-relay.vercel.app/api/v0/users/current" {
+			t.Errorf("probe url = %q, want relay url", p.url)
+		}
+		return http.StatusOK, deepSeekProbeBody("access-token"), nil
+	})
+
+	cfg := &providers.ProviderConfig{
+		BaseURL: "https://my-relay.vercel.app",
+		StaticHeaders: map[string]string{
+			"x-relay-target": "https://chat.deepseek.com",
+			"x-relay-path":   "/api/v0/chat/completion",
+		},
+	}
+	out := validateDeepSeekWeb(context.Background(), cfg, "user-token-1", nil)
+	if !out.valid {
+		t.Fatalf("expected probe to be valid, got false: %s", out.message)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 }
 

@@ -46,14 +46,12 @@ const PLANS_LINK: NavLink = { kind: 'link', id: 'plans', label: 'Plans', icon: '
  * draws is visible until an operator turns it off; these are the exceptions, and
  * the Settings panel offers every entry — hideable or not — for arrangement.
  *
- * Jailbreak is here on purpose: it rewrites outbound request bodies, so it is
- * an advanced surface. The `advanced` preset (NAV_PRESETS below) reveals it
- * alongside Plans, and an operator can also reveal it by hand in Settings.
+ * Only Plans is hidden by default: it is an upsell surface, not a working one.
+ * Persona (the jailbreak injection surface) is visible out of the box, because
+ * the system-injection feature is one an operator reaches for directly, and an
+ * entry that only appears after a Settings trip reads as missing.
  */
-export const DEFAULT_HIDDEN_NAV_ENTRIES: NavLink[] = [
-  PLANS_LINK,
-  { kind: 'link', id: 'jailbreak', label: 'Persona', icon: 'masks' },
-]
+export const DEFAULT_HIDDEN_NAV_ENTRIES: NavLink[] = [PLANS_LINK]
 
 /**
  * What a deployment that never saved a hide list hides. Only an absent or
@@ -73,12 +71,18 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'main',
     entries: [
-      { kind: 'link', id: 'endpoint', label: 'Endpoint & Key', icon: 'api' },
+      { kind: 'link', id: 'endpoint', label: 'API Endpoint', icon: 'api' },
+      { kind: 'link', id: 'keys', label: 'API Keys', icon: 'key' },
       { kind: 'link', id: 'connections', label: 'Providers', icon: 'dns' },
       { kind: 'link', id: 'combos', label: 'Combo & Vision Adapter', icon: 'layers' },
+      { kind: 'link', id: 'remask', label: 'Model Remask', icon: 'theater_comedy' },
+      { kind: 'link', id: 'portal', label: 'Client Portal', icon: 'storefront' },
+      { kind: 'link', id: 'playground', label: 'Playground', icon: 'smart_toy' },
       { kind: 'link', id: 'analytics', label: 'Usage', icon: 'bar_chart' },
       { kind: 'link', id: 'quota', label: 'Quota Tracker', icon: 'data_usage' },
+      { kind: 'link', id: 'model-status', label: 'Model Status', icon: 'monitor_heart' },
       { kind: 'link', id: 'token-saver', label: 'Token Saver', icon: 'savings' },
+      { kind: 'link', id: 'http-rewrite', label: 'HTTP Rewrite', icon: 'alt_route' },
       { kind: 'link', id: 'cli-tools', label: 'CLI Tools', icon: 'terminal' },
     ],
   },
@@ -104,7 +108,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { kind: 'link', id: 'proxy-pools', label: 'Proxy Pools', icon: 'lan' },
       { kind: 'link', id: 'skills', label: 'Skills', icon: 'extension' },
       { kind: 'link', id: 'security', label: 'Security', icon: 'shield_lock' },
-      { kind: 'link', id: 'jailbreak', label: 'Persona', icon: 'masks' },
+      { kind: 'link', id: 'jailbreak', label: 'Prompt Injection', icon: 'masks' },
       PLANS_LINK,
       // Console Log and Settings sit last on purpose: they are the two entries
       // an operator reaches for after everything else, and Settings is the one
@@ -170,13 +174,13 @@ export const NAV_PRESETS: NavPresetDef[] = [
   {
     id: 'default',
     label: 'Default',
-    hint: 'Plans and Persona hidden, everything else in place',
+    hint: 'Plans hidden, everything else in place',
     visible: NAV_ORDER.filter((id) => !DEFAULT_HIDDEN_NAV_IDS.includes(id)),
   },
   {
     id: 'advanced',
     label: 'Advanced',
-    hint: 'Every entry, Plans and Persona included',
+    hint: 'Every entry, Plans and Prompt Injection included',
     visible: [...NAV_ORDER],
   },
   {
@@ -238,10 +242,8 @@ function buildTabOwners(): Record<string, string[]> {
       }
     }
   }
-  // Aliases the sidebar keeps lit for another path: /dashboard/keys is the
-  // legacy Endpoint & Key route, Terminal lives inside Console Log, and the
-  // Cache/Compression sections live inside Usage.
-  own('keys', 'endpoint')
+  // Aliases the sidebar keeps lit for another path: Terminal lives inside
+  // Console Log, and the Cache/Compression sections live inside Usage.
   own('terminal', 'console-log')
   own('usage-cache', 'analytics')
   own('usage-compression', 'analytics')
@@ -448,7 +450,8 @@ export function isNavHidden(tab: ActiveTab, hidden: unknown): boolean {
  * Cache and Compression sections.
  */
 export function isNavLinkActive(id: ActiveTab, activeTab: ActiveTab): boolean {
-  if (id === 'endpoint') return activeTab === 'endpoint' || activeTab === 'keys'
+  if (id === 'endpoint') return activeTab === 'endpoint'
+  if (id === 'keys') return activeTab === 'keys'
   if (id === 'console-log') return activeTab === 'console-log' || activeTab === 'terminal'
   if (id === 'analytics') {
     return (

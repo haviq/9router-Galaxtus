@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"9router/proxy/internal/models"
 )
@@ -31,7 +32,8 @@ const apiKeyColumns = `SELECT id, key, name, machineId, isActive, createdAt,
 	rateLimitRPM, rateLimitTPM, rateLimitConcurrency,
 	tokenQuota, queueTimeoutMs,
 	keyHash, lookupHash, keyDisplay,
-	expiresAt, lastUsedAt, usedCount, metadata, planId`
+	expiresAt, lastUsedAt, usedCount, metadata, planId,
+	createdBy, lastUsedIP, allowedIPs, balance`
 
 // apiKeyScan returns the Scan destinations for apiKeyColumns plus an applier
 // that must run after Scan has filled the nullable columns.
@@ -43,12 +45,16 @@ func apiKeyScan(k *models.APIKey) (dest []any, apply func()) {
 	var expiresAt, lastUsedAt, metadata sql.NullString
 	var usedCount sql.NullInt64
 	var planID sql.NullString
+	var createdBy, lastUsedIP, allowedIPs sql.NullString
+	var balance sql.NullFloat64
 	dest = []any{&k.ID, &k.Key, &nameVal, &machineVal, &k.IsActive, &k.CreatedAt,
 		&rateRPM, &rateTPM, &rateConc, &tokenQuota, &queueTimeout, &keyHash, &lookupHash, &keyDisplay,
-		&expiresAt, &lastUsedAt, &usedCount, &metadata, &planID}
+		&expiresAt, &lastUsedAt, &usedCount, &metadata, &planID,
+		&createdBy, &lastUsedIP, &allowedIPs, &balance}
 	apply = func() {
 		applyApiKeyNulls(k, nameVal, machineVal, rateRPM, rateTPM, rateConc, tokenQuota, queueTimeout, usedCount,
-			keyHash, lookupHash, keyDisplay, expiresAt, lastUsedAt, metadata, planID)
+			keyHash, lookupHash, keyDisplay, expiresAt, lastUsedAt, metadata, planID,
+			createdBy, lastUsedIP, allowedIPs, balance)
 	}
 	return dest, apply
 }
@@ -57,7 +63,9 @@ func apiKeyScan(k *models.APIKey) (dest []any, apply func()) {
 func applyApiKeyNulls(k *models.APIKey, nameVal, machineVal sql.NullString,
 	rateRPM, rateTPM, rateConc, tokenQuota, queueTimeout, usedCount sql.NullInt64,
 	keyHash, lookupHash, keyDisplay sql.NullString,
-	expiresAt, lastUsedAt, metadata, planID sql.NullString) {
+	expiresAt, lastUsedAt, metadata, planID sql.NullString,
+	createdBy, lastUsedIP, allowedIPs sql.NullString,
+	balance sql.NullFloat64) {
 	if nameVal.Valid {
 		k.Name = &nameVal.String
 	}
@@ -108,6 +116,19 @@ func applyApiKeyNulls(k *models.APIKey, nameVal, machineVal sql.NullString,
 	}
 	if planID.Valid {
 		k.PlanID = &planID.String
+	}
+	if createdBy.Valid {
+		k.CreatedBy = &createdBy.String
+	}
+	if lastUsedIP.Valid {
+		k.LastUsedIP = &lastUsedIP.String
+	}
+	if allowedIPs.Valid {
+		k.AllowedIPs = &allowedIPs.String
+	}
+	if balance.Valid {
+		v := balance.Float64
+		k.Balance = &v
 	}
 }
 
@@ -222,3 +243,109 @@ func (r *Repo) SetApiKeyDisplay(id, keyDisplay string) error {
 	}
 	return nil
 }
+
+// GetFirstActiveApiKey returns the first active client API key, or nil if none exist.
+func (r *Repo) GetFirstActiveApiKey() (*models.APIKey, error) {
+	keys, err := r.GetApiKeys()
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		if k.IsActive == 1 {
+			return k, nil
+		}
+	}
+	return nil, nil
+}
+
+// SetApiKeyCreatedBy sets the creator/owner identity of an API key.
+func (r *Repo) SetApiKeyCreatedBy(id, createdBy string) error {
+	res, err := r.db.Exec(`UPDATE apiKeys SET createdBy = ? WHERE id = ?`, createdBy, id)
+	if err != nil {
+		return fmt.Errorf("set api key createdBy %s: %w", id, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("set api key createdBy %s: %w", id, errNoSuchApiKey)
+	}
+	return nil
+}
+
+// SetApiKeyAllowedIPs updates the allowed IP / CIDR whitelist for an API key.
+func (r *Repo) SetApiKeyAllowedIPs(id, allowedIPs string) error {
+	res, err := r.db.Exec(`UPDATE apiKeys SET allowedIPs = ? WHERE id = ?`, allowedIPs, id)
+	if err != nil {
+		return fmt.Errorf("set api key allowedIPs %s: %w", id, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("set api key allowedIPs %s: %w", id, errNoSuchApiKey)
+	}
+	return nil
+}
+
+// RecordApiKeyUsageWithClient records the call, updates lastUsedAt and lastUsedIP on apiKeys,
+// and upserts caller client telemetry into api_key_clients.
+func (r *Repo) RecordApiKeyUsageWithClient(keyID, ip, userAgent string) error {
+	if keyID == "" {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if ip == "" {
+		ip = "127.0.0.1"
+	}
+
+	// Update apiKeys row
+	_, err := r.db.Exec(
+		`UPDATE apiKeys SET lastUsedAt = ?, lastUsedIP = ?, usedCount = usedCount + 1 WHERE id = ?`,
+		now, ip, keyID,
+	)
+	if err != nil {
+		return fmt.Errorf("update api key last used %s: %w", keyID, err)
+	}
+
+	// Upsert api_key_clients record
+	_, err = r.db.Exec(`
+		INSERT INTO api_key_clients (api_key_id, ip, user_agent, request_count, first_seen_at, last_seen_at)
+		VALUES (?, ?, ?, 1, ?, ?)
+		ON CONFLICT(api_key_id, ip) DO UPDATE SET
+			request_count = request_count + 1,
+			last_seen_at = excluded.last_seen_at,
+			user_agent = CASE WHEN excluded.user_agent != '' THEN excluded.user_agent ELSE api_key_clients.user_agent END
+	`, keyID, ip, userAgent, now, now)
+	if err != nil {
+		return fmt.Errorf("upsert api key client %s / %s: %w", keyID, ip, err)
+	}
+	return nil
+}
+
+// GetApiKeyClients returns all client IPs that have authenticated using this key.
+func (r *Repo) GetApiKeyClients(keyID string) ([]models.APIKeyClient, error) {
+	rows, err := r.db.Query(
+		`SELECT api_key_id, ip, user_agent, request_count, first_seen_at, last_seen_at
+		 FROM api_key_clients
+		 WHERE api_key_id = ?
+		 ORDER BY last_seen_at DESC`,
+		keyID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get api key clients %s: %w", keyID, err)
+	}
+	defer rows.Close()
+
+	var clients []models.APIKeyClient
+	for rows.Next() {
+		var c models.APIKeyClient
+		var ua sql.NullString
+		if err := rows.Scan(&c.APIKeyID, &c.IP, &ua, &c.RequestCount, &c.FirstSeenAt, &c.LastSeenAt); err != nil {
+			return nil, fmt.Errorf("scan api key client: %w", err)
+		}
+		if ua.Valid {
+			c.UserAgent = ua.String
+		}
+		clients = append(clients, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate api key clients: %w", err)
+	}
+	return clients, nil
+}
+

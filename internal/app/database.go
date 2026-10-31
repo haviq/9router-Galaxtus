@@ -56,6 +56,13 @@ func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
 		log.Warn("db", "legacy provider id migration failed", "error", err)
 	}
 
+	// Prune orphan custom models whose provider nodes were removed.
+	if pruned, err := db.PruneOrphanCustomModels(conn); err != nil {
+		log.Warn("db", "orphan custom models prune failed", "error", err)
+	} else if pruned > 0 {
+		log.Info("db", "pruned orphan custom models", "count", pruned)
+	}
+
 	// Cross-process lease table for upstream coordination (Freebuff
 	// sessions, future scopes). Idempotent: no-op when already present,
 	// invisible to dashboards that do not know the table. Best-effort:

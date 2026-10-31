@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"9router/proxy/internal/db"
 	"9router/proxy/internal/proxy"
 )
 
@@ -20,6 +21,7 @@ type ModelInfo struct {
 	Strategy     string   // combo routing strategy: "fallback", "round-robin", "sticky", "fusion"
 	StickyLimit  int      // sticky round-robin: consecutive requests per model before rotating (default 1)
 	JudgeModel   string   // optional judge model for fusion strategy
+	RemaskRule   *db.ModelRemaskRule // optional — set when resolved through a model remask rule
 }
 
 // ConnectionData holds parsed fields from the providerConnections.data JSON blob.

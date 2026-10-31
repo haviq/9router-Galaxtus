@@ -231,6 +231,18 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 	// the combos — otherwise "mycombo(high)" resolves to neither.
 	modelStr, _ = thinking.ParseSuffix(modelStr)
 
+	// 0. Model Remasking Rules (highest priority alias & stealth routing)
+	if h.Repo != nil {
+		rule, err := h.Repo.GetModelRemaskRule(modelStr)
+		if err == nil && rule != nil && rule.Enabled && rule.Target != "" && rule.Target != modelStr {
+			targetInfo := h.resolveRemaskTarget(rule.Target)
+			if targetInfo != nil {
+				targetInfo.RemaskRule = rule
+				return targetInfo, nil
+			}
+		}
+	}
+
 	// 1. Standard format: "provider/model"
 	if strings.Contains(modelStr, "/") {
 		parts := strings.SplitN(modelStr, "/", 2)
@@ -500,4 +512,50 @@ func (h *ChatHandler) resolveComboRouting(comboName string, fallbackStrategy str
 	}
 
 	return strategy, stickyLimit, ""
+}
+
+func (h *ChatHandler) resolveRemaskTarget(target string) *ModelInfo {
+	if target == "" {
+		return nil
+	}
+	if h.Repo != nil {
+		combo, err := h.Repo.GetComboByName(target)
+		if err == nil && combo != nil && combo.Models != "" {
+			var modelStrings []string
+			if err := json.Unmarshal([]byte(combo.Models), &modelStrings); err == nil && len(modelStrings) > 0 {
+				flattened, flatErr := h.flattenComboModels(modelStrings)
+				if flatErr == nil && len(flattened) > 0 {
+					firstInfo := h.resolveModelEntry(flattened[0])
+					if firstInfo == nil {
+						firstInfo, _ = h.resolveModel(flattened[0])
+					}
+					if firstInfo != nil {
+						firstInfo.ComboModels = flattened
+						strat, sticky, judge := h.resolveComboRouting(combo.Name, combo.Strategy)
+						firstInfo.Strategy = strat
+						firstInfo.StickyLimit = sticky
+						firstInfo.JudgeModel = judge
+						return firstInfo
+					}
+				}
+			}
+		}
+	}
+
+	if strings.Contains(target, "/") {
+		parts := strings.SplitN(target, "/", 2)
+		prefix := parts[0]
+		model := parts[1]
+		if info := h.resolvePrefixProvider(prefix, model); info != nil {
+			return info
+		}
+		provider := resolveProviderAlias(prefix)
+		return &ModelInfo{Provider: provider, Model: model}
+	}
+
+	if info := h.resolvePrefixProvider(target, ""); info != nil {
+		return info
+	}
+	provider := resolveProviderAlias(target)
+	return &ModelInfo{Provider: provider, Model: ""}
 }

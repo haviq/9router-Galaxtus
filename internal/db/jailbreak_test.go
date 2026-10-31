@@ -231,3 +231,60 @@ func TestJailbreakModelOffStaysListed(t *testing.T) {
 		t.Errorf("binding still listed after delete")
 	}
 }
+
+// NormalizeJailbreakInjectMode is the one gate a preset's inject mode passes
+// through, so it must accept the empty default, canonicalize the three named
+// modes, and refuse anything else at save time rather than storing it.
+func TestNormalizeJailbreakInjectMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty defaults to prepend", in: "", want: JailbreakInjectPrepend},
+		{name: "prepend passes through", in: JailbreakInjectPrepend, want: JailbreakInjectPrepend},
+		{name: "append passes through", in: JailbreakInjectAppend, want: JailbreakInjectAppend},
+		{name: "replace passes through", in: JailbreakInjectReplace, want: JailbreakInjectReplace},
+		{name: "unknown mode is refused", in: "sidebar", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeJailbreakInjectMode(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NormalizeJailbreakInjectMode(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("NormalizeJailbreakInjectMode(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// A preset round-trips its inject mode through store, and an unset one is
+// stored as prepend so the request path never has to guess.
+func TestJailbreakInjectModeRoundTrip(t *testing.T) {
+	repo := newSettingsRepo(t)
+
+	if err := repo.SaveJailbreakPreset(&JailbreakDoc{ID: "override", Prompt: "P", InjectMode: JailbreakInjectReplace}); err != nil {
+		t.Fatalf("save replace preset: %v", err)
+	}
+	got, err := repo.GetJailbreakPreset("override")
+	if err != nil {
+		t.Fatalf("get replace preset: %v", err)
+	}
+	if got.InjectMode != JailbreakInjectReplace {
+		t.Errorf("inject mode = %q, want %q", got.InjectMode, JailbreakInjectReplace)
+	}
+
+	if err := repo.SaveJailbreakPreset(&JailbreakDoc{ID: "plain", Prompt: "P"}); err != nil {
+		t.Fatalf("save plain preset: %v", err)
+	}
+	plain, err := repo.GetJailbreakPreset("plain")
+	if err != nil {
+		t.Fatalf("get plain preset: %v", err)
+	}
+	if plain.InjectMode != JailbreakInjectPrepend {
+		t.Errorf("default inject mode = %q, want %q", plain.InjectMode, JailbreakInjectPrepend)
+	}
+}

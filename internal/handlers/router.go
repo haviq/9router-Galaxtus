@@ -74,6 +74,7 @@ func SetupRoutes(r interface {
 	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
 	r.Get("/api/models", chatH.HandleModels)
 	r.Post("/chat/completions", chatH.HandleChatCompletions)
+	r.Post("/v1/chat/completions", chatH.HandleChatCompletions)
 	r.Post("/messages", chatH.HandleMessages)
 	r.Post("/messages/count_tokens", chatH.HandleCountTokens)
 	r.Post("/api/chat", chatH.HandleOllamaChat)
@@ -181,6 +182,13 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 		// windows with, so the dashboard reports the same numbers the gate
 		// enforces instead of its own private view of them.
 		dashH.Limiter = chatH.RateLimiter
+
+		// Playground & Dashboard Chat/Models endpoints (dashboard session authenticated)
+		r.Get("/api/models", chatH.HandleModels)
+		r.Get("/api/models/info", chatH.HandleModelsInfo)
+		r.Get("/api/v1/models", chatH.HandleModels)
+		r.Post("/api/chat/completions", chatH.HandleChatCompletions)
+		r.Post("/api/v1/chat/completions", chatH.HandleChatCompletions)
 	}
 	ssoH := sso.NewHandler(repo)
 
@@ -227,6 +235,21 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// Compression Analytics
 	r.Get("/api/analytics/compression", dashH.HandleGetCompressionAnalytics)
 
+	// Feature 1: Billing & Pricing Engine
+	r.Get("/api/billing/pricing", dashH.HandleListModelPricing)
+	r.Post("/api/billing/pricing", dashH.HandleSetModelPricing)
+	r.Delete("/api/billing/pricing/{id}", dashH.HandleDeleteModelPricing)
+	r.Post("/api/billing/topup", dashH.HandleTopupApiKey)
+
+	// Feature 2: Client Self-Service Portal
+	r.Get("/api/client/portal-info", dashH.HandleGetClientPortalInfo)
+	r.Options("/api/client/portal-info", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// Jailbreak: agent prompt presets + per-model binding. Registered here and in
 	// dashboard.RegisterRoutes (a tests-only table); a route added there alone
 	// 404s on the real server — the same trap as the per-node limits pair.
@@ -238,11 +261,13 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/jailbreak/presets/{id}/duplicate", dashH.HandleDuplicateJailbreakPreset)
 	r.Get("/api/jailbreak/models", dashH.HandleListJailbreakModels)
 	r.Get("/api/jailbreak/models/catalog", dashH.HandleJailbreakModelCatalog)
+	r.Post("/api/jailbreak/models/status", dashH.HandleJailbreakModelStatus)
 	r.Put("/api/jailbreak/models", dashH.HandleSetJailbreakModel)
 	r.Delete("/api/jailbreak/models", dashH.HandleDeleteJailbreakModel)
 	r.Get("/api/jailbreak/excludes", dashH.HandleGetJailbreakExcludes)
 	r.Put("/api/jailbreak/excludes", dashH.HandlePutJailbreakExcludes)
 	r.Post("/api/jailbreak/import", dashH.HandleImportJailbreak)
+	r.Post("/api/jailbreak/import/syadagentic", dashH.HandleImportSyadagenticPack)
 	r.Post("/api/jailbreak/resolve", dashH.HandleExplainJailbreak)
 	r.Get("/api/jailbreak/usage", dashH.HandleJailbreakUsage)
 	r.Post("/api/jailbreak/preview", dashH.HandlePreviewJailbreak)
@@ -312,6 +337,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Get("/api/keys/{id}/models", dashH.HandleGetApiKeyModels)
 	r.Put("/api/keys/{id}/models", dashH.HandleSetApiKeyModels)
 	r.Put("/api/keys/{id}", dashH.HandleUpdateApiKey)
+	r.Get("/api/keys/{id}/clients", dashH.HandleGetApiKeyClients)
 	r.Get("/api/plans", dashH.HandleListPlans)
 	r.Post("/api/plans", dashH.HandleCreatePlan)
 	r.Get("/api/plans/{id}", dashH.HandleGetPlan)
@@ -350,12 +376,24 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/models/sync", dashH.HandleSyncProviderModels)
 	r.Put("/api/models/alias", dashH.HandleSetModelAlias)
 	r.Delete("/api/models/alias", dashH.HandleDeleteModelAlias)
+	r.Get("/api/models/remask", dashH.HandleGetModelRemaskRules)
+	r.Post("/api/models/remask", dashH.HandleSetModelRemaskRule)
+	r.Put("/api/models/remask", dashH.HandleSetModelRemaskRule)
+	r.Delete("/api/models/remask", dashH.HandleDeleteModelRemaskRule)
+	r.Delete("/api/models/remask/{alias}", dashH.HandleDeleteModelRemaskRule)
 
 	r.Get("/api/settings", dashH.HandleGetSettings)
 	r.Put("/api/settings", dashH.HandleUpdateSettings)
 	r.Patch("/api/settings", dashH.HandleUpdateSettings)
 	r.Put("/settings", dashH.HandleUpdateSettings)
 	r.Patch("/settings", dashH.HandleUpdateSettings)
+
+	// Model and Combo Parameter Overrides
+	r.Get("/api/model-parameters", dashH.HandleListModelParameters)
+	r.Get("/api/model-parameters/*", dashH.HandleGetModelParameters)
+	r.Put("/api/model-parameters/*", dashH.HandleSetModelParameters)
+	r.Post("/api/model-parameters/*", dashH.HandleSetModelParameters)
+	r.Delete("/api/model-parameters/*", dashH.HandleDeleteModelParameters)
 
 	// Settings backup/restore + outbound proxy diagnostics (profile page)
 	r.Get("/api/settings/database", dashH.HandleExportDatabase)
@@ -480,11 +518,21 @@ func mountOAuthRoutes(r interface {
 // the gateway from building a second handler for the scheduler — see the
 // warning on SetupRoutes about the two PersistentStores.
 func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.ChatHandler {
-	// Public (unauthenticated) endpoints
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Public (unauthenticated) endpoints with CORS for remote tunnel health checks
+	healthH := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, HEAD")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
-	})
+	}
+	r.HandleFunc("/health", healthH)
+	r.HandleFunc("/api/health", healthH)
 	// Version info is public (upstream PUBLIC_API_PATHS): the Sidebar polls
 	// /api/version on every dashboard page including /login, before any
 	// session or API key exists.
@@ -499,8 +547,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// Public OAuth landing page: providers redirect browsers here after login.
 	// Browsers carry neither the dashboard session nor the engine API key.
 	r.Get("/callback", oauthH.HandleCallbackPage)
+	quickSyncDashH := dashboard.NewDashboardHandler(repo, ts)
+	r.HandleFunc("/api/providers/deepseek-web/quick-sync", quickSyncDashH.HandleDeepSeekWebQuickSync)
 	r.Get("/", webH.ServeHTTP)
 	r.Get("/login", webH.ServeHTTP)
+	r.Get("/portal", webH.ServeHTTP)
 	// Dashboard pages require the login session when requireLogin is on; the
 	// guard redirects browsers to /login (upstream dashboardGuard).
 	r.Group(func(r chi.Router) {
@@ -654,6 +705,16 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// Without this call the gate is inert on a real boot: its unit tests set
 	// the field by hand, so only a booted router can tell the difference.
 	engineChatH.SetRateLimiter(rateLimiter)
+
+	// Client self-service portal telemetry (authenticated via client's own Bearer API key)
+	portalDashH := dashboard.NewDashboardHandler(repo, ts)
+	r.Get("/api/client/portal-info", portalDashH.HandleGetClientPortalInfo)
+	r.Options("/api/client/portal-info", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// Dashboard management API: login-gated when requireLogin is on, but still
 	// reachable with a valid API key or the local CLI token (upstream parity).

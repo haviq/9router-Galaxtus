@@ -55,7 +55,7 @@ describe('nav model', () => {
   })
 
   it('hides only the defaults, and offers every row to the arrangement', () => {
-    expect(DEFAULT_HIDDEN_NAV_ENTRIES.map((entry) => entry.id)).toEqual(['plans', 'jailbreak'])
+    expect(DEFAULT_HIDDEN_NAV_ENTRIES.map((entry) => entry.id)).toEqual(['plans'])
     for (const entry of DEFAULT_HIDDEN_NAV_ENTRIES) {
       expect(NAV_ORDER).toContain(entry.id)
       expect(ALWAYS_VISIBLE_NAV_IDS).not.toContain(entry.id)
@@ -74,14 +74,16 @@ describe('nav model', () => {
 })
 
 describe('default visibility', () => {
-  it('hides Plans and Jailbreak until a list is saved', () => {
-    expect([...DEFAULT_HIDDEN_NAV_IDS]).toEqual(['plans', 'jailbreak'])
+  it('hides Plans until a list is saved, and shows Jailbreak', () => {
+    expect([...DEFAULT_HIDDEN_NAV_IDS]).toEqual(['plans'])
     for (const saved of [undefined, null, {}, 'plans', { hidden: 'plans' }]) {
       const ids = renderedIds(saved)
       expect(ids, JSON.stringify(saved)).not.toContain('plans')
       // Security was never a default and must stay visible out of the box.
       expect(ids, JSON.stringify(saved)).toContain('security')
       expect(ids, JSON.stringify(saved)).toContain('settings')
+      // Jailbreak (the system-injection surface) is visible out of the box.
+      expect(ids, JSON.stringify(saved)).toContain('jailbreak')
     }
   })
 
@@ -149,8 +151,8 @@ describe('stored hide list', () => {
   })
 
   it('starts from the defaults when nothing was saved', () => {
-    expect(setNavVisible(undefined, 'plans', true)).toEqual(['jailbreak'])
-    expect(setNavVisible(undefined, 'quota', false)).toEqual(['quota', 'jailbreak', 'plans'])
+    expect(setNavVisible(undefined, 'plans', true)).toEqual([])
+    expect(setNavVisible(undefined, 'quota', false)).toEqual(['quota', 'plans'])
   })
 
   it('survives a junk payload without losing a valid entry', () => {
@@ -163,7 +165,7 @@ describe('stored hide list', () => {
 
 describe('route guard', () => {
   it('follows the aliases the sidebar keeps lit', () => {
-    expect(isNavHidden('keys', { hidden: ['endpoint'] })).toBe(true)
+    expect(isNavHidden('keys', { hidden: ['keys'] })).toBe(true)
     expect(isNavHidden('terminal', { hidden: ['console-log'] })).toBe(true)
     expect(isNavHidden('usage-cache', { hidden: ['analytics'] })).toBe(true)
     expect(isNavHidden('usage-compression', { hidden: ['analytics'] })).toBe(true)
@@ -183,7 +185,8 @@ describe('route guard', () => {
 
 describe('active highlighting', () => {
   it('keeps the aliased entries lit', () => {
-    expect(isNavLinkActive('endpoint', 'keys')).toBe(true)
+    expect(isNavLinkActive('keys', 'keys')).toBe(true)
+    expect(isNavLinkActive('endpoint', 'keys')).toBe(false)
     expect(isNavLinkActive('console-log', 'terminal')).toBe(true)
     expect(isNavLinkActive('analytics', 'usage-cache')).toBe(true)
     expect(isNavLinkActive('analytics', 'usage-compression')).toBe(true)
@@ -220,9 +223,9 @@ describe('sidebar arrangement', () => {
   })
 
   it('moves a row one place inside its own container', () => {
-    expect(moveNavEntry([], 'connections', -1).slice(0, 2)).toEqual(['connections', 'endpoint'])
+    expect(moveNavEntry([], 'keys', -1).slice(0, 2)).toEqual(['keys', 'endpoint'])
     // Past an end: unchanged, which is what a disabled arrow relies on.
-    expect(moveNavEntry([], 'endpoint', -1).slice(0, 2)).toEqual(['endpoint', 'connections'])
+    expect(moveNavEntry([], 'endpoint', -1).slice(0, 2)).toEqual(['endpoint', 'keys'])
   })
 
   it('keeps an accordion whole and its children in their own container', () => {

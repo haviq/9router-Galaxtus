@@ -79,7 +79,7 @@ func IsModelNotAllowed(err error) bool {
 // returns empty. A storage failure degrades fail-closed with ErrPolicyUnavailable
 // (503) rather than failing open.
 func (h *ChatHandler) effectiveAllowedModels(key *models.APIKey) ([]string, error) {
-	if h == nil || key == nil || key.ID == "" {
+	if h == nil || key == nil || key.ID == "" || key.ID == "dashboard-session" || key.ID == "dashboard" {
 		return nil, nil
 	}
 	if h.Repo == nil {
@@ -314,8 +314,14 @@ func (h *ChatHandler) accessCandidates(modelID string) []string {
 
 	add(bare)
 	add(modelID)
+	if h.Repo != nil {
+		if rule, err := h.Repo.GetModelRemaskRule(bare); err == nil && rule != nil && rule.Target != "" {
+			add(rule.Target)
+		}
+	}
 	if info, err := h.resolveModel(bare); err == nil && info != nil && info.Provider != "" {
 		add(info.Provider + "/" + info.Model)
+		add(info.Model)
 	}
 	return out
 }
@@ -324,6 +330,9 @@ func (h *ChatHandler) accessCandidates(modelID string) []string {
 // (synthetic warmup/keepalive traffic never reaches a provider and so is never
 // a real access request) and before any connection selection.
 func (h *ChatHandler) checkModelAccess(key *models.APIKey, modelID string) error {
+	if key == nil || key.ID == "dashboard-session" || key.ID == "dashboard" {
+		return nil
+	}
 	patterns, err := h.effectiveAllowedModels(key)
 	if err != nil {
 		return err
@@ -395,7 +404,20 @@ func (h *ChatHandler) enforceModelAccess(w http.ResponseWriter, r *http.Request,
 	if modelID == "" {
 		return true
 	}
-	err := h.checkModelAccess(requestKey(r), modelID)
+	key := requestKey(r)
+	if key != nil && key.ID != "" && key.ID != "dashboard-session" && key.ID != "dashboard" {
+		if key.Balance != nil && *key.Balance == 0 {
+			handlerutil.WriteJSON(w, http.StatusPaymentRequired, map[string]any{
+				"error": map[string]string{
+					"message": "Insufficient balance (saldo habis). Please top up your balance.",
+					"type":    "insufficient_balance",
+					"code":    "balance_exhausted",
+				},
+			})
+			return false
+		}
+	}
+	err := h.checkModelAccess(key, modelID)
 	if err == nil {
 		return true
 	}
@@ -443,7 +465,7 @@ func (h *ChatHandler) filterModelsByAccess(key *models.APIKey, data []ModelInfoO
 // here would be policy deciding routing.
 func modelEntryCandidates(m ModelInfoObject) []string {
 	owner := strings.TrimSpace(m.OwnedBy)
-	if owner == "" || owner == "combo" {
+	if owner == "" || owner == "combo" || owner == "remask" {
 		return []string{m.ID}
 	}
 	return []string{m.ID, owner + "/" + m.ID}

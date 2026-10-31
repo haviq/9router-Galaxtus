@@ -423,6 +423,9 @@ func (h *ChatHandler) buildModelsListForMode(
 	// 1. Combos first (upstream pushes them before provider models).
 	data = h.appendCombos(data, seen)
 
+	// 1b. Remask virtual models
+	data = h.appendRemaskModels(data, seen)
+
 	// 2. Nothing to scope to: static catalog dump + custom models, so a fresh
 	// install still has a usable picker (upstream connections.length === 0).
 	// In connected mode the dump is narrowed to providers that are actually
@@ -807,6 +810,12 @@ func (h *ChatHandler) appendLooseCustomModels(
 		if hiddenProvider(providerID) {
 			continue
 		}
+		if isCompatibleProviderID(providerID) {
+			if _, ok := prefixMap[providerID]; !ok {
+				// Custom provider node was deleted or no longer exists in providerNodes; skip orphan models.
+				continue
+			}
+		}
 		prefix := providerID
 		if mapped, ok := prefixMap[providerID]; ok && mapped != "" {
 			prefix = mapped
@@ -1119,6 +1128,47 @@ func (h *ChatHandler) appendCombos(data []ModelInfoObject, seen map[string]bool)
 					}
 				}
 			}
+		}
+
+		data = append(data, entry)
+	}
+	return data
+}
+
+// appendRemaskModels appends active model remask rules as virtual models.
+func (h *ChatHandler) appendRemaskModels(data []ModelInfoObject, seen map[string]bool) []ModelInfoObject {
+	if h.Repo == nil {
+		return data
+	}
+	rules, err := h.Repo.GetModelRemaskRules()
+	if err != nil || len(rules) == 0 {
+		return data
+	}
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Alias == "" || seen[rule.Alias] {
+			continue
+		}
+		seen[rule.Alias] = true
+
+		entry := ModelInfoObject{
+			ID:      rule.Alias,
+			Object:  "model",
+			OwnedBy: "remask",
+		}
+		entry.Capabilities = &providers.ComboCapabilities{
+			Vision:    true,
+			Reasoning: !rule.StripThinking,
+			Tools:     true,
+		}
+		if rule.ContextWindow > 0 {
+			entry.ContextLength = optionalTokenLimit(rule.ContextWindow)
+		} else {
+			entry.ContextLength = optionalTokenLimit(128000)
+		}
+		if rule.MaxOutput > 0 {
+			entry.MaxCompletionTokens = optionalTokenLimit(rule.MaxOutput)
+		} else {
+			entry.MaxCompletionTokens = optionalTokenLimit(8192)
 		}
 
 		data = append(data, entry)

@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import { Info, Search, X } from 'lucide-svelte'
-  import { api, type Combo, type ProviderConnection, type ProviderNode } from '../../api/client'
+  import { api, type Combo, type ProviderConnection, type ProviderNode, type ModelRemaskRule } from '../../api/client'
   import ModelPill from './ModelPill.svelte'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
   import {
@@ -19,10 +19,11 @@
   import { pushEscapeHandler } from '../../lib/ui/escapeStack'
 
   interface Props {
-    isOpen: boolean
-    target: 'combo' | 'vision' | 'audio' | 'judge' | 'router'
+    isOpen?: boolean
+    target?: 'combo' | 'vision' | 'audio' | 'judge' | 'router'
     connections?: ProviderConnection[]
     combos?: Combo[]
+    remaskRules?: ModelRemaskRule[]
     providerNodes?: ProviderNode[]
     modelAliases?: Record<string, string>
     customModels?: Array<{ providerAlias?: string; id: string; name?: string; type?: string }>
@@ -31,16 +32,18 @@
     deprecations?: Record<string, unknown>
     currentComboName?: string
     addedModelValues?: string[]
+    selectedModels?: string[]
     onSelect: (modelValue: string) => void
     onDeselect?: (modelValue: string) => void
     onClose: () => void
   }
 
   let {
-    isOpen,
-    target,
+    isOpen = true,
+    target = 'router',
     connections = [],
     combos = [],
+    remaskRules = [],
     providerNodes = [],
     modelAliases,
     customModels,
@@ -48,10 +51,15 @@
     deprecations,
     currentComboName,
     addedModelValues = [],
+    selectedModels = [],
     onSelect,
     onDeselect,
     onClose,
   }: Props = $props()
+
+  let fetchedRemaskRules = $state<ModelRemaskRule[]>([])
+  let effectiveRemaskRules = $derived(remaskRules.length > 0 ? remaskRules : fetchedRemaskRules)
+  let effectiveAddedModels = $derived(addedModelValues.length > 0 ? addedModelValues : selectedModels)
 
   let searchQuery = $state('')
   let parsedQuery = $derived(parseSearchQuery(searchQuery))
@@ -68,6 +76,11 @@
         cachedPickerExtras = extras
         fetchedExtras = extras
       })
+      if (remaskRules.length === 0) {
+        void api.getModelRemaskRules().then((rules) => {
+          fetchedRemaskRules = rules || []
+        }).catch(() => {})
+      }
     }
   })
 
@@ -87,13 +100,21 @@
       deprecations: deprecations ?? fetchedExtras.deprecations,
     })
   )
+  let filteredRemaskRules = $derived(
+    effectiveRemaskRules.filter((r) => {
+      if (!r.enabled || !r.alias) return false
+      const q = searchQuery.toLowerCase().trim()
+      if (!q) return true
+      return r.alias.toLowerCase().includes(q) || r.target.toLowerCase().includes(q)
+    })
+  )
   let filteredCombos = $derived(
     resolveFilteredCombos(combos, currentComboName, searchQuery, target)
   )
   let filteredGroups = $derived(resolveFilteredGroups(groups, searchQuery, target))
 
   function handleToggle(val: string) {
-    if (addedModelValues.includes(val)) {
+    if (effectiveAddedModels.includes(val)) {
       if (onDeselect) {
         onDeselect(val)
       } else {
@@ -195,6 +216,26 @@
 
       <!-- Categories & Models List -->
       <div class="max-h-[400px] overflow-y-auto space-y-3 custom-scrollbar">
+        <!-- Remask virtual models section -->
+        {#if filteredRemaskRules.length > 0}
+          <div>
+            <div class="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5 z-10">
+              <span class="text-xs font-semibold text-emerald-400">Virtual Remask Clones</span>
+              <span class="text-[10px] text-text-muted">({filteredRemaskRules.length})</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              {#each filteredRemaskRules as rule (rule.alias)}
+                <ModelPill
+                  label={rule.alias}
+                  value={rule.alias}
+                  isAdded={effectiveAddedModels.includes(rule.alias)}
+                  onToggle={handleToggle}
+                />
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         <!-- Combos section - always first -->
         {#if filteredCombos.length > 0}
           <div>
@@ -207,7 +248,7 @@
                 <ModelPill
                   label={combo.name}
                   value={combo.name}
-                  isAdded={addedModelValues.includes(combo.name)}
+                  isAdded={effectiveAddedModels.includes(combo.name)}
                   onToggle={handleToggle}
                 />
               {/each}
@@ -236,7 +277,7 @@
                 <ModelPill
                   label={model.name}
                   value={model.value}
-                  isAdded={addedModelValues.includes(model.value)}
+                  isAdded={effectiveAddedModels.includes(model.value)}
                   vision={model.caps.vision}
                   reasoning={model.caps.reasoning}
                   deprecated={model.deprecated}

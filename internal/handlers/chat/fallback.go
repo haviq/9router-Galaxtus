@@ -178,15 +178,18 @@ func (h *ChatHandler) handleAccountFallback(
 		// and the exclusion below must all name the account that was dialled.
 		log.Debug("fallback", "connection", "conn", connObj.ID, "candidate", c.ID)
 		attemptStart := time.Now()
+		releaseLoad := globalLoadTracker.Acquire(connObj.ID)
 		if err := h.tryForwardWithConnection(forwardRequestParams{
 			Ctx: ctx, W: w, Provider: provider, Model: model,
 			ConnectionID: connObj.ID, ConnName: connObjName(connObj), ConnEmail: connObjEmail(connObj),
 			ConnData: connData, Body: body,
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		}); err == nil {
+			releaseLoad(true, time.Since(attemptStart))
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 200, nil, time.Since(attemptStart).Milliseconds())
 			return nil
 		} else {
+			releaseLoad(false, time.Since(attemptStart))
 			lastErr = err
 			observ.IncFallback(provider, model, observ.FallbackReasonUpstreamError)
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 0, err, time.Since(attemptStart).Milliseconds())

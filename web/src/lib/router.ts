@@ -6,6 +6,8 @@ export type ActiveTab =
   | 'analytics'
   | 'quota'
   | 'token-saver'
+  | 'model-status'
+  | 'playground'
 // Cache Analytics and Compression Analytics are sections of the Usage page
 // (issue #200), not sidebar destinations. They keep their own paths so a
 // section stays linkable and survives a reload.
@@ -27,7 +29,10 @@ export type ActiveTab =
   | 'security'
   | 'plans'
   | 'jailbreak'
+  | 'http-rewrite'
   | 'keys' // legacy alias for the endpoint tab; see ROUTE_TO_TAB below
+  | 'remask'
+  | 'portal'
 
 export const TAB_ROUTES: Record<ActiveTab, string> = {
   login: '/login',
@@ -37,6 +42,8 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   analytics: '/dashboard/usage',
   quota: '/dashboard/quota',
   'token-saver': '/dashboard/token-saver',
+  'model-status': '/dashboard/model-status',
+  playground: '/dashboard/playground',
   'usage-cache': '/dashboard/usage/cache',
   'usage-compression': '/dashboard/usage/compression',
   'cli-tools': '/dashboard/cli-tools',
@@ -55,9 +62,10 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   security: '/dashboard/security',
   plans: '/dashboard/plans',
   jailbreak: '/dashboard/jailbreak',
-  // Legacy alias: keys are managed on the endpoint tab (issue #199), so both
-  // tabs resolve to the same route rather than leaving one unreachable.
-  keys: '/dashboard/endpoint',
+  'http-rewrite': '/dashboard/http-rewrite',
+  keys: '/dashboard/keys',
+  remask: '/dashboard/remask',
+  portal: '/portal',
 }
 
 const ROUTE_TO_TAB: Record<string, ActiveTab> = {
@@ -68,6 +76,21 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   '/dashboard': 'endpoint',
   '/dashboard/endpoint': 'endpoint',
   '/endpoint': 'endpoint',
+
+  // portal
+  '/portal': 'portal',
+
+  // remask / model remasking
+  '/dashboard/remask': 'remask',
+  '/dashboard/model-remask': 'remask',
+  '/remask': 'remask',
+  '/model-remask': 'remask',
+
+  // keys / API key management
+  '/dashboard/keys': 'keys',
+  '/dashboard/api-keys': 'keys',
+  '/keys': 'keys',
+  '/api-keys': 'keys',
 
   // connections / providers
   '/dashboard/providers': 'connections',
@@ -105,15 +128,18 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   '/dashboard/token-saver': 'token-saver',
   '/token-saver': 'token-saver',
 
+  // per-model jailbreak status (live sweep of the model catalog)
+  '/dashboard/model-status': 'model-status',
+  '/model-status': 'model-status',
+
+  // playground
+  '/dashboard/playground': 'playground',
+  '/playground': 'playground',
+
   // cli-tools
   '/dashboard/cli-tools': 'cli-tools',
   '/cli-tools': 'cli-tools',
 
-  // Client API keys now live on the endpoint tab (issue #199), so the old key
-  // URLs resolve there instead of to a tab that no longer renders. Keeping the
-  // mapping means a bookmarked /dashboard/keys still lands on the key table.
-  '/dashboard/keys': 'endpoint',
-  '/keys': 'endpoint',
 
   // media providers
   '/dashboard/media-providers/embedding': 'media-embedding',
@@ -174,6 +200,10 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   '/plans': 'plans',
   '/dashboard/jailbreak': 'jailbreak',
   '/jailbreak': 'jailbreak',
+  '/dashboard/http-rewrite': 'http-rewrite',
+  '/http-rewrite': 'http-rewrite',
+  '/dashboard/rewrite': 'http-rewrite',
+  '/rewrite': 'http-rewrite',
 }
 
 // The Usage page's sections. Cache Analytics and Compression Analytics joined
@@ -213,6 +243,7 @@ export function pathToTab(pathname: string): ActiveTab {
   if (ROUTE_TO_TAB[normalized]) {
     return ROUTE_TO_TAB[normalized]
   }
+  if (normalized.includes('portal')) return 'portal'
   if (normalized.includes('login')) return 'login'
   if (normalized.includes('endpoint')) return 'endpoint'
   if (normalized.includes('embedding')) return 'media-embedding'
@@ -237,9 +268,10 @@ export function pathToTab(pathname: string): ActiveTab {
   if (normalized.includes('usage') || normalized.includes('analytics')) return 'analytics'
   if (normalized.includes('combos')) return 'combos'
   if (normalized.includes('providers') || normalized.includes('connections')) return 'connections'
-  if (normalized.includes('keys')) return 'endpoint'
+  if (normalized.includes('keys')) return 'keys'
   if (normalized.includes('security')) return 'security'
   if (normalized.includes('plans')) return 'plans'
+  if (normalized.includes('http-rewrite') || normalized.includes('rewrite')) return 'http-rewrite'
   if (normalized.includes('profile') || normalized.includes('settings')) return 'settings'
   return 'endpoint'
 }

@@ -149,6 +149,26 @@ export interface APIKey {
   metadata?: string
   /** Plan template this key inherits from. Empty means no plan. */
   planId?: string
+  /** Creator / Owner of the key */
+  createdBy?: string
+  /** Last seen caller IP */
+  lastUsedIp?: string
+  /** Allowed IPs/CIDRs comma-separated */
+  allowedIps?: string
+  /** Real-time in-flight requests */
+  activeRequests?: number
+  /** Real-time currently active caller IPs */
+  activeIps?: string[]
+}
+
+export interface APIKeyClient {
+  apiKeyId: string
+  ip: string
+  userAgent: string
+  requestCount: number
+  firstSeenAt: string
+  lastSeenAt: string
+  isLive?: boolean
 }
 
 export interface APIKeyPolicy {
@@ -165,6 +185,10 @@ export interface APIKeyPolicy {
   name?: string
   /** Plan template to inherit. An empty string detaches the key. */
   planId?: string
+  /** Creator or owner */
+  createdBy?: string
+  /** Comma-separated list of allowed IPs or CIDR blocks */
+  allowedIps?: string
 }
 
 /** A reusable policy template (F-3). Keys inherit its limits as defaults. */
@@ -230,7 +254,38 @@ export interface ProviderStrategyConfig {
   [key: string]: unknown
 }
 
+export interface ModelRemaskRule {
+  alias: string
+  target: string
+  enabled: boolean
+  cloakIdentity?: boolean
+  stripThinking?: boolean
+  contextWindow?: number
+  maxOutput?: number
+  customPrompt?: string
+  watermark?: string
+  watermarkMode?: 'append' | 'prepend' | 'invisible'
+}
+
+export interface ModelParameters {
+  temperature?: number | null
+  topP?: number | null
+  topK?: number | null
+  repetitionPenalty?: number | null
+  frequencyPenalty?: number | null
+  presencePenalty?: number | null
+  maxTokens?: number | null
+  contextLength?: number | null
+  stream?: 'on' | 'off' | 'default' | string | null
+}
+
 export interface Settings {
+  modelParameters?: Record<string, ModelParameters>
+  chatRewriteEnabled?: boolean
+  chatRewriteSystem?: string
+  chatRewriteAssistant?: string
+  chatRewriteTemperature?: number
+  chatRewriteTopP?: number
   appName?: string
   appLogoUrl?: string
   requireApiKey?: boolean
@@ -930,6 +985,11 @@ export interface JailbreakDoc {
   source?: string
   /** Instruction-file convention: AGENTS, SOUL, PERSONA, LOAD, … */
   kind?: string
+  /**
+   * How the prompt reaches the outbound body: `prepend` (default) leads the
+   * existing system content, `append` follows it, `replace` drops it.
+   */
+  injectMode?: string
   id?: string
   name?: string
   /** Models matching one of these rules resolve to this preset. */
@@ -998,6 +1058,26 @@ export interface JailbreakMatch {
   keyword?: string
   matchedId?: string
   detail?: string
+}
+
+/** One model's live injection state, as the resolver reported it. */
+export interface JailbreakModelStatus extends JailbreakMatch {
+  /** The id a client would send. */
+  id: string
+  /** injected | excluded | off */
+  status: string
+  /** The winning preset's instruction-file kind, when it has one. */
+  presetKind?: string
+  /** The winning preset's inject mode: prepend | append | replace. */
+  injectMode?: string
+  /** The winning preset's lifetime injection count. */
+  usage?: number
+}
+
+/** A status sweep: the resolved rows plus the per-verdict totals. */
+export interface JailbreakModelStatusResult {
+  models: JailbreakModelStatus[]
+  counts: Record<string, number>
 }
 
 export function isAuthenticated(): boolean {
@@ -1492,11 +1572,20 @@ export const api = {
 
   // API Keys
   getApiKeys: () => request<APIKey[]>('/api/keys'),
-  createApiKey: (payload: { name?: string; machineId?: string; key?: string }) =>
+  createApiKey: (payload: { name?: string; machineId?: string; key?: string; createdBy?: string; allowedIps?: string }) =>
     request<{ success: boolean; id: string; key: string }>('/api/keys', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  getApiKeyClients: (id: string) =>
+    request<{
+      apiKeyId: string
+      activeRequests: number
+      activeIps: string[]
+      lastUsedIp: string
+      lastUsedAt: string
+      clients: APIKeyClient[]
+    }>(`/api/keys/${encodeURIComponent(id)}/clients`),
   deleteApiKey: (id: string) =>
     request<{ success: boolean }>(`/api/keys/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -1780,6 +1869,31 @@ export const api = {
     request<{ ok: boolean; error?: string; note?: string; latencyMs?: number; status?: number; blocked?: boolean; resetAt?: string }>('/api/models/test', {
       method: 'POST',
       body: JSON.stringify({ model, kind }),
+    }),
+
+  // Model & Combo Parameters
+  listModelParameters: () => request<Record<string, ModelParameters>>('/api/model-parameters'),
+  getModelParameters: (target: string) => request<ModelParameters>(`/api/model-parameters/${encodeURIComponent(target)}`),
+  setModelParameters: (target: string, params: ModelParameters) =>
+    request<{ status: string; target: string }>(`/api/model-parameters/${encodeURIComponent(target)}`, {
+      method: 'PUT',
+      body: JSON.stringify(params),
+    }),
+  deleteModelParameters: (target: string) =>
+    request<{ status: string; deleted: string }>(`/api/model-parameters/${encodeURIComponent(target)}`, {
+      method: 'DELETE',
+    }),
+
+  // Model Remasking
+  getModelRemaskRules: () => request<ModelRemaskRule[]>('/api/models/remask'),
+  setModelRemaskRule: (rule: ModelRemaskRule) =>
+    request<{ success: boolean; rule: ModelRemaskRule }>('/api/models/remask', {
+      method: 'POST',
+      body: JSON.stringify(rule),
+    }),
+  deleteModelRemaskRule: (alias: string) =>
+    request<{ success: boolean }>(`/api/models/remask?alias=${encodeURIComponent(alias)}`, {
+      method: 'DELETE',
     }),
 
   // Settings
@@ -2446,6 +2560,7 @@ export const api = {
     geminiSafety: boolean
     source?: string
     kind?: string
+    injectMode?: string
     keywords?: JailbreakKeyword[]
     excludes?: JailbreakKeyword[]
     order?: number
@@ -2480,6 +2595,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ target, name: name || undefined }),
     }),
+  /**
+   * Install the SYADAGENTIC technique pack (Sekolah76/syadagentic) as presets,
+   * one per T-numbered technique. The server fetches and parses the collection;
+   * re-running refreshes in place rather than duplicating.
+   */
+  importSyadagenticPack: () =>
+    request<JailbreakImportResult>('/api/jailbreak/import/syadagentic', { method: 'POST' }),
   uploadJailbreakPreset: (file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -2507,6 +2629,13 @@ export const api = {
     }),
   getJailbreakModelCatalog: () =>
     request<{ models: string[] }>('/api/jailbreak/models/catalog'),
+  /** Resolves every catalog id, or just the ones passed, through the same
+   * resolver the request path uses. An empty list sweeps the whole catalog. */
+  getJailbreakModelStatus: (ids: string[] = []) =>
+    request<JailbreakModelStatusResult>('/api/jailbreak/models/status', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   getJailbreakUsage: () =>
     request<{ usage: Record<string, number> }>('/api/jailbreak/usage'),
   explainJailbreak: (id: string) =>

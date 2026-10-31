@@ -980,12 +980,15 @@ func (h *ChatHandler) applyConnectionStrategy(conns []*models.ProviderConnection
 	}
 
 	switch strings.ToLower(strings.TrimSpace(strat.RotateStrategy)) {
+	case "least-busy", "least-load", "fastest", "latency":
+		return globalLoadTracker.SortByLeastBusy(conns)
+
 	case "round-robin", "roundrobin", "sticky":
 		stickyLimit := strat.StickyLimit
 		if stickyLimit <= 0 {
 			stickyLimit = 1
 		}
-		return h.selectByRecency(conns, stickyLimit)
+		return globalLoadTracker.SortByLeastBusy(h.selectByRecency(conns, stickyLimit))
 
 	case "random":
 		offset := rand.IntN(len(conns))
@@ -993,11 +996,11 @@ func (h *ChatHandler) applyConnectionStrategy(conns []*models.ProviderConnection
 		for i := range conns {
 			rotated[i] = conns[(offset+i)%len(conns)]
 		}
-		return rotated
+		return globalLoadTracker.SortByLeastBusy(rotated)
 
 	default:
-		// "none", "fallback", or empty: keep DB priority order
-		return conns
+		// "none", "fallback", or empty: optimize by least-busy with DB priority fallback
+		return globalLoadTracker.SortByLeastBusy(conns)
 	}
 }
 

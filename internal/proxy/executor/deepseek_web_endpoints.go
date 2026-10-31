@@ -32,6 +32,10 @@ func deepSeekEndpointsFor(baseURL string) deepSeekEndpoints {
 	if base, ok := strings.CutSuffix(completion, suffix); ok {
 		root = base
 	}
+	if !strings.Contains(root, "/api/v0") {
+		root = strings.TrimRight(root, "/") + "/api/v0"
+		completion = root + suffix
+	}
 	return deepSeekEndpoints{
 		usersCurrent:  root + "/users/current",
 		sessionCreate: root + "/chat_session/create",

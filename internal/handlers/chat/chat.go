@@ -7,6 +7,7 @@ import (
 	"9router/proxy/internal/log"
 	"9router/proxy/internal/middleware"
 	"9router/proxy/internal/providers"
+	"9router/proxy/internal/rewrite"
 	"9router/proxy/internal/semanticcache"
 	"9router/proxy/internal/thinking"
 	"9router/proxy/internal/translator"
@@ -53,6 +54,16 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	}
 	defer r.Body.Close()
 
+	if !rewrite.IsRewritten(r.Context()) && rewrite.ShouldRewrite(r.URL.Path, r.RequestURI) {
+		cfg := rewrite.LoadConfig(h.Repo)
+		if cfg.Enabled {
+			if rewritten, err := rewrite.ApplyChatRewrite(body, cfg); err == nil {
+				body = rewritten
+				r = r.WithContext(rewrite.WithRewritten(r.Context()))
+			}
+		}
+	}
+
 	var reqBody struct {
 		Model  string `json:"model"`
 		Stream bool   `json:"stream"`
@@ -70,6 +81,20 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	if reqBody.Model == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing model")
 		return
+	}
+
+	// Apply model/combo parameter overrides from settings
+	if h.Repo != nil {
+		if settings, err := h.Repo.GetSettings(); err == nil && settings != nil {
+			if params := settings.LookupModelParameters(reqBody.Model); params != nil {
+				if updated, streamOverridden, newStreamVal, err := ApplyModelParametersToPayload(body, params); err == nil {
+					body = updated
+					if streamOverridden {
+						reqBody.Stream = newStreamVal
+					}
+				}
+			}
+		}
 	}
 
 	// Bypass synthetic requests (Claude Code naming, warmup, keepalive)
@@ -99,6 +124,23 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	// Record the dispatching key so the outbound guardrail tap can resolve the
 	// right policy. A keyless caller leaves it unset and the tap stays inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+
+	// Feature 4: Fast Exact Prompt Cache (<2ms TTFT, zero upstream cost)
+	fastHash := semanticcache.GlobalFastCache.ComputeHash(reqBody.Model, body)
+	if cachedItem, hit := semanticcache.GlobalFastCache.Get(fastHash); hit {
+		semanticcache.GlobalFastCache.ServeCachedResponse(w, cachedItem, reqBody.Stream)
+		log.Info("chat", "fast prompt cache hit", "model", reqBody.Model, "stream", reqBody.Stream)
+		return
+	}
+	if !reqBody.Stream {
+		fastCapture := &cacheCaptureWriter{ResponseWriter: w}
+		w = fastCapture
+		defer func() {
+			if fastCapture.statusCode == http.StatusOK && fastCapture.body.Len() > 0 {
+				semanticcache.GlobalFastCache.Put(fastHash, reqBody.Model, "", fastCapture.body.Bytes(), 0, 0)
+			}
+		}()
+	}
 
 	// Check prompt/response cache for non-streaming requests before model
 	// resolution: a hit answers the turn without touching a provider, so it
@@ -132,6 +174,9 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if modelInfo != nil && modelInfo.RemaskRule != nil {
+		w = NewModelRemaskWriter(w, modelInfo.RemaskRule)
 	}
 	requiredCaps := DetectRequiredCapabilities(body)
 
@@ -211,6 +256,9 @@ func (h *ChatHandler) handleSingleModel(ctx context.Context, w http.ResponseWrit
 	upstreamBody["model"] = h.wireModelForNode(modelInfo.Provider, modelInfo.Model)
 	repairToolCallIDsInMap(upstreamBody)
 	ctx = h.applyJailbreak(ctx, upstreamBody, requestedModel, jailbreakLegIDs(modelInfo.Provider, modelInfo.Model)...)
+	if modelInfo.RemaskRule != nil {
+		ctx = h.ApplyModelRemask(ctx, upstreamBody, modelInfo.RemaskRule)
+	}
 	upstreamJSON, err := json.Marshal(upstreamBody)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to marshal upstream request")
@@ -272,6 +320,20 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	if reqBody.Model == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing model")
 		return
+	}
+
+	// Apply model/combo parameter overrides from settings
+	if h.Repo != nil {
+		if settings, err := h.Repo.GetSettings(); err == nil && settings != nil {
+			if params := settings.LookupModelParameters(reqBody.Model); params != nil {
+				if updated, streamOverridden, newStreamVal, err := ApplyModelParametersToPayload(body, params); err == nil {
+					body = updated
+					if streamOverridden {
+						reqBody.Stream = newStreamVal
+					}
+				}
+			}
+		}
 	}
 
 	// Per-key model policy: 403 before any translation work or connection

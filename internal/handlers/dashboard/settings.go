@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -58,6 +59,28 @@ func (h *DashboardHandler) HandleGetSettings(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if raw == nil {
+		raw = make(map[string]any)
+	}
+	if _, ok := raw["chatRewriteEnabled"]; !ok {
+		raw["chatRewriteEnabled"] = true
+	}
+	if sys, _ := raw["chatRewriteSystem"].(string); sys == "" {
+		if data, err := os.ReadFile("rewrite_system.txt"); err == nil && len(bytes.TrimSpace(data)) > 0 {
+			raw["chatRewriteSystem"] = string(bytes.TrimSpace(data))
+		}
+	}
+	if asst, _ := raw["chatRewriteAssistant"].(string); asst == "" {
+		if data, err := os.ReadFile("rewrite_assistant.txt"); err == nil && len(bytes.TrimSpace(data)) > 0 {
+			raw["chatRewriteAssistant"] = string(bytes.TrimSpace(data))
+		}
+	}
+	if temp, ok := raw["chatRewriteTemperature"].(float64); !ok || temp == 0 {
+		raw["chatRewriteTemperature"] = 0.9
+	}
+	if topP, ok := raw["chatRewriteTopP"].(float64); !ok || topP == 0 {
+		raw["chatRewriteTopP"] = 0.95
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, sanitizeSettings(raw))
 }
@@ -145,6 +168,12 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 	if err := h.Repo.UpdateSettingsRaw(updates); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if sys, ok := updates["chatRewriteSystem"].(string); ok {
+		_ = os.WriteFile("rewrite_system.txt", []byte(sys), 0644)
+	}
+	if asst, ok := updates["chatRewriteAssistant"].(string); ok {
+		_ = os.WriteFile("rewrite_assistant.txt", []byte(asst), 0644)
 	}
 	if clearLogo {
 		removeUploadedLogo(previousLogo)

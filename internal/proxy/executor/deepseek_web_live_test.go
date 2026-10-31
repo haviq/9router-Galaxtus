@@ -143,7 +143,7 @@ func TestLiveDeepSeekWebAccessTokenRefresh(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	turn := newDeepSeekTurn(nil, deepSeekWebBase+deepSeekCompletionPath, deepSeekStealthFor(nil)).
+	turn := newDeepSeekTurnFromBaseURL(nil, deepSeekWebBase+deepSeekCompletionPath, deepSeekStealthFor(nil)).
 		withBrowserFingerprint("", "")
 	deepSeekTokens.drop(userToken)
 

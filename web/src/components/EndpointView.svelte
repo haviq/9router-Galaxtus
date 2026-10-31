@@ -86,6 +86,8 @@
   // what the integration snippets above point an operator at.
   let isCreateKeyOpen = $state(false)
   let newKeyName = $state('')
+  let newKeyCreator = $state('admin')
+  let newKeyAllowedIps = $state('')
   let isSubmittingKey = $state(false)
   let newlyCreatedKey = $state<string | null>(null)
 
@@ -104,14 +106,24 @@
     if (!url) return false
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      const timeoutId = setTimeout(() => controller.abort(), 4000)
       const res = await fetch(`${url}/api/health`, {
         mode: 'cors',
         cache: 'no-store',
         signal: controller.signal,
-      })
+      }).catch(() => null)
       clearTimeout(timeoutId)
-      return res.ok
+      if (res && res.ok) return true
+
+      const controller2 = new AbortController()
+      const timeoutId2 = setTimeout(() => controller2.abort(), 4000)
+      const res2 = await fetch(`${url}/health`, {
+        mode: 'cors',
+        cache: 'no-store',
+        signal: controller2.signal,
+      }).catch(() => null)
+      clearTimeout(timeoutId2)
+      return !!(res2 && res2.ok)
     } catch {
       return false
     }
@@ -176,7 +188,13 @@
   }
 
   onMount(() => {
-    loadStatus()
+    loadStatus().then(() => {
+      if (tunnelEnabled && (tunnelUrl || publicUrl)) {
+        const direct = tunnelUrl ? clientPingUrl(tunnelUrl) : Promise.resolve(false)
+        const pub = publicUrl ? clientPingUrl(publicUrl) : Promise.resolve(false)
+        Promise.all([direct, pub]).then(([d, p]) => markReachable(d || p, 'tunnel'))
+      }
+    })
     // Status poll only while degraded; healthy tunnels rely on the browser
     // ping below (upstream STATUS_POLL_FAST_MS behaviour).
     const statusTimer = setInterval(async () => {
@@ -364,11 +382,17 @@
 
     isSubmittingKey = true
     try {
-      const res = await api.createApiKey({ name: newKeyName.trim() })
+      const res = await api.createApiKey({
+        name: newKeyName.trim(),
+        createdBy: newKeyCreator.trim() || 'admin',
+        allowedIps: newKeyAllowedIps.trim(),
+      })
       if (res.key) {
         newlyCreatedKey = res.key
         localStorage.setItem('9router_key', res.key)
         newKeyName = ''
+        newKeyCreator = 'admin'
+        newKeyAllowedIps = ''
         isCreateKeyOpen = false
         await loadStatus()
         onRefresh?.()
@@ -439,7 +463,7 @@
           Tunnel
         </span>
 
-        {#if tunnelEnabled && !isTunnelLoading && tunnelReachable}
+        {#if tunnelEnabled && !isTunnelLoading && (tunnelReachable || (tunnelRunning && (publicUrl || tunnelUrl)))}
           <input
             type="text"
             value="{publicUrl || tunnelUrl}/v1"
@@ -753,6 +777,33 @@
             placeholder="Production Key"
             class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm text-text-main focus:outline-none focus:border-brand-500"
           />
+        </div>
+
+        <div class="space-y-1">
+          <label for="key-creator-input" class="block text-xs font-semibold text-text-muted">
+            Created By / Owner
+          </label>
+          <input
+            id="key-creator-input"
+            type="text"
+            bind:value={newKeyCreator}
+            placeholder="admin, devops, or username"
+            class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm text-text-main focus:outline-none focus:border-brand-500"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label for="key-ips-input" class="block text-xs font-semibold text-text-muted">
+            Allowed Client IPs / Subnets (Optional)
+          </label>
+          <input
+            id="key-ips-input"
+            type="text"
+            bind:value={newKeyAllowedIps}
+            placeholder="e.g. 192.168.1.5, 10.0.0.0/16 (leave blank for any IP)"
+            class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm text-text-main focus:outline-none focus:border-brand-500 font-mono text-xs"
+          />
+          <p class="text-[11px] text-text-subtle">Leave empty to allow connections from any IP address.</p>
         </div>
 
         <div class="flex gap-2 pt-2">

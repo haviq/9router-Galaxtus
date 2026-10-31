@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"9router/proxy/internal/constants"
 	"9router/proxy/internal/log"
+	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy"
 )
 
@@ -66,6 +68,7 @@ const (
 type deepSeekTurn struct {
 	client    *http.Client
 	endpoints deepSeekEndpoints
+	paths     deepSeekEndpoints
 	origin    string
 	stealth   deepSeekStealth
 
@@ -80,21 +83,95 @@ type deepSeekTurn struct {
 	// deviceID is the id the site knows this client by. The site generates
 	// it per browser and keeps it, and it is what the settings calls carry.
 	deviceID string
+
+	// headers carries connection static headers (e.g. custom headers and edge relay markers).
+	headers map[string]string
+
+	// isRelay is true when dialed through an edge relay (Vercel, Cloudflare, Deno).
+	isRelay bool
+
+	// relayTarget is the origin host for the edge relay (e.g. https://chat.deepseek.com).
+	relayTarget string
 }
 
 // newDeepSeekTurn resolves the endpoints for one connection's configured base
-// URL. A nil client falls back to the default, so the executor is usable
-// without one in tests and in the paths that pass nil.
-func newDeepSeekTurn(client *http.Client, baseURL string, stealth deepSeekStealth) deepSeekTurn {
+// URL and static headers. A nil client falls back to the default, so the executor
+// is usable without one in tests and in the paths that pass nil.
+func newDeepSeekTurn(client *http.Client, cfg *providers.ProviderConfig, stealth deepSeekStealth) deepSeekTurn {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return deepSeekTurn{
-		client:    client,
-		endpoints: deepSeekEndpointsFor(baseURL),
-		origin:    deepSeekOrigin(baseURL),
-		stealth:   stealth,
+	baseURL := deepSeekBaseURL(cfg)
+	staticHeaders := make(map[string]string)
+	if cfg != nil && cfg.StaticHeaders != nil {
+		for k, v := range cfg.StaticHeaders {
+			staticHeaders[k] = v
+		}
 	}
+
+	relayTarget := staticHeaders["x-relay-target"]
+	if relayTarget == "" && (strings.Contains(baseURL, "vercel.app") || strings.Contains(baseURL, "workers.dev") || strings.Contains(baseURL, "deno.dev") || strings.Contains(baseURL, "netlify.app")) {
+		relayTarget = deepSeekWebBase
+		staticHeaders["x-relay-target"] = relayTarget
+	}
+	isRelay := relayTarget != ""
+
+	var endpoints deepSeekEndpoints
+	var paths deepSeekEndpoints
+	var origin string
+
+	if isRelay {
+		targetPath := staticHeaders["x-relay-path"]
+		if targetPath == "" {
+		targetPath = deepSeekCompletionPath
+		}
+		targetURL := strings.TrimRight(relayTarget, "/") + targetPath
+		targetEndpoints := deepSeekEndpointsFor(targetURL)
+
+		origin = deepSeekOrigin(targetURL)
+		paths = deepSeekEndpoints{
+			usersCurrent:  urlPathOr(targetEndpoints.usersCurrent, "/api/v0/users/current"),
+			sessionCreate: urlPathOr(targetEndpoints.sessionCreate, "/api/v0/chat_session/create"),
+			sessionDelete: urlPathOr(targetEndpoints.sessionDelete, "/api/v0/chat_session/delete"),
+			powChallenge:  urlPathOr(targetEndpoints.powChallenge, "/api/v0/chat/create_pow_challenge"),
+			completion:    urlPathOr(targetEndpoints.completion, deepSeekCompletionPath),
+		}
+
+		dialBase := strings.TrimRight(baseURL, "/")
+		endpoints = deepSeekEndpoints{
+			usersCurrent:  dialBase + paths.usersCurrent,
+			sessionCreate: dialBase + paths.sessionCreate,
+			sessionDelete: dialBase + paths.sessionDelete,
+			powChallenge:  dialBase + paths.powChallenge,
+			completion:    dialBase + paths.completion,
+		}
+	} else {
+		origin = deepSeekOrigin(baseURL)
+		endpoints = deepSeekEndpointsFor(baseURL)
+		paths = deepSeekEndpoints{
+			usersCurrent:  urlPathOr(endpoints.usersCurrent, "/api/v0/users/current"),
+			sessionCreate: urlPathOr(endpoints.sessionCreate, "/api/v0/chat_session/create"),
+			sessionDelete: urlPathOr(endpoints.sessionDelete, "/api/v0/chat_session/delete"),
+			powChallenge:  urlPathOr(endpoints.powChallenge, "/api/v0/chat/create_pow_challenge"),
+			completion:    urlPathOr(endpoints.completion, deepSeekCompletionPath),
+		}
+	}
+
+	return deepSeekTurn{
+		client:      client,
+		endpoints:   endpoints,
+		paths:       paths,
+		origin:      origin,
+		stealth:     stealth,
+		headers:     staticHeaders,
+		isRelay:     isRelay,
+		relayTarget: relayTarget,
+	}
+}
+
+// newDeepSeekTurnFromBaseURL is a convenience constructor for tests.
+func newDeepSeekTurnFromBaseURL(client *http.Client, baseURL string, stealth deepSeekStealth) deepSeekTurn {
+	return newDeepSeekTurn(client, &providers.ProviderConfig{BaseURL: baseURL}, stealth)
 }
 
 // withBrowserFingerprint attaches the transport and the credential the turn
@@ -108,7 +185,7 @@ func newDeepSeekTurn(client *http.Client, baseURL string, stealth deepSeekStealt
 func (t deepSeekTurn) withBrowserFingerprint(cookie, deviceID string) deepSeekTurn {
 	t.cookie = cookie
 	t.deviceID = deviceID
-	if deepSeekWebPlainHTTP() {
+	if deepSeekWebPlainHTTP() || t.isRelay {
 		return t
 	}
 	transport, err := newDeepSeekTransport(t.client, t.origin, cookie)
@@ -143,6 +220,11 @@ func (t deepSeekTurn) webHeaders(extra map[string]string) map[string]string {
 		headers = deepSeekBrowserHeaders(t.origin, extra)
 	} else {
 		headers = deepSeekPlainHeaders(t.origin, extra)
+	}
+	for k, v := range t.headers {
+		if v != "" {
+			headers[k] = v
+		}
 	}
 	return t.withCookie(headers)
 }
@@ -385,10 +467,26 @@ func (t deepSeekTurn) do(ctx context.Context, method, url, bearer string, header
 // over Go's own transport, which the shared layer drives with its retry and
 // proxy-fallback rules.
 func (t deepSeekTurn) send(ctx context.Context, method, url string, body []byte, headers map[string]string) (*http.Response, error) {
-	if t.transport == nil {
-		return proxy.DoRequest(ctx, t.client, method, url, headers, body)
+	outHeaders := make(map[string]string, len(headers)+len(t.headers)+2)
+	for k, v := range headers {
+		outHeaders[k] = v
 	}
-	response, err := t.transport.send(ctx, method, url, body, headers)
+	for k, v := range t.headers {
+		if v != "" {
+			if _, exists := outHeaders[k]; !exists {
+				outHeaders[k] = v
+			}
+		}
+	}
+	if t.isRelay {
+		outHeaders["x-relay-target"] = t.relayTarget
+		outHeaders["x-relay-path"] = t.relayPathFor(url)
+	}
+
+	if t.transport == nil {
+		return proxy.DoRequest(ctx, t.client, method, url, outHeaders, body)
+	}
+	response, err := t.transport.send(ctx, method, url, body, outHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -405,6 +503,34 @@ func (t deepSeekTurn) send(ctx context.Context, method, url string, body []byte,
 		Header:     response.Header,
 		ReadErr:    readErr,
 	}
+}
+
+func (t deepSeekTurn) relayPathFor(endpointURL string) string {
+	switch endpointURL {
+	case t.endpoints.usersCurrent:
+		return t.paths.usersCurrent
+	case t.endpoints.sessionCreate:
+		return t.paths.sessionCreate
+	case t.endpoints.sessionDelete:
+		return t.paths.sessionDelete
+	case t.endpoints.powChallenge:
+		return t.paths.powChallenge
+	case t.endpoints.completion:
+		return t.paths.completion
+	default:
+		return urlPathOr(endpointURL, "/")
+	}
+}
+
+func urlPathOr(rawURL, fallback string) string {
+	if u, err := url.Parse(rawURL); err == nil && u.Path != "" {
+		path := u.Path
+		if u.RawQuery != "" {
+			path += "?" + u.RawQuery
+		}
+		return path
+	}
+	return fallback
 }
 
 // bizDataOf unwraps the data envelope's biz_data field, which this API nests
@@ -560,7 +686,11 @@ func solveDeepSeekPow(ctx context.Context, challenge deepSeekPowChallenge) (stri
 // it from that conversation's page, so the Referer names the page rather
 // than the site root.
 func (t deepSeekTurn) requestPow(ctx context.Context, accessToken, chatSessionID string) (string, error) {
-	payload := map[string]any{"target_path": deepSeekCompletionPath}
+	targetPath := t.paths.completion
+	if targetPath == "" {
+		targetPath = deepSeekCompletionPath
+	}
+	payload := map[string]any{"target_path": targetPath}
 	data, err := t.do(ctx, http.MethodPost, t.endpoints.powChallenge, accessToken, map[string]string{
 		"referer": deepSeekChatPageURL(t.origin, chatSessionID),
 	}, payload)

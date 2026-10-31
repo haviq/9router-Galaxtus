@@ -93,17 +93,29 @@ func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.Prov
 	if isStream {
 		action = "streamGenerateContent?alt=sse"
 	}
-	var requestURL string
+	var actionPath string
 	if projectID != "" {
-		requestURL = fmt.Sprintf("%s/v1internal:%s", baseURL, action)
+		actionPath = fmt.Sprintf("/v1internal:%s", action)
 	} else {
-		requestURL = fmt.Sprintf("%s/v1beta/models/%s:%s", baseURL, modelName, action)
+		actionPath = fmt.Sprintf("/v1beta/models/%s:%s", modelName, action)
 	}
+	requestURL := fmt.Sprintf("%s%s", baseURL, actionPath)
 
 	headers := map[string]string{
 		"Content-Type":  "application/json",
 		"Authorization": "Bearer " + apiKey,
 		"User-Agent":    providers.AntigravityCLIUserAgent,
+	}
+	if cfg != nil {
+		for k, v := range cfg.StaticHeaders {
+			if v != "" {
+				headers[k] = v
+			}
+		}
+		if relayTarget := cfg.StaticHeaders["x-relay-target"]; relayTarget != "" {
+			headers["x-relay-path"] = actionPath
+		}
+		headers = providers.ApplyHeaderOverrides(headers, cfg.HeaderOverrides)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewReader(sendBody))

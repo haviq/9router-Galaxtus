@@ -257,3 +257,81 @@ func (r *Repo) SetRateLimitDefaults(d RateLimitDefaults) error {
 		"rateWindowSeconds":  d.WindowSeconds,
 	})
 }
+
+
+// SetModelParameters stores or updates parameter overrides for a model or combo name.
+func (r *Repo) SetModelParameters(target string, params ModelParameters) error {
+	return r.updateSettings(func(existing map[string]any) error {
+		currentMap, _ := existing["modelParameters"].(map[string]any)
+		if currentMap == nil {
+			currentMap = make(map[string]any)
+		}
+
+		entry := make(map[string]any)
+		if params.Temperature != nil {
+			entry["temperature"] = *params.Temperature
+		}
+		if params.TopP != nil {
+			entry["topP"] = *params.TopP
+		}
+		if params.TopK != nil {
+			entry["topK"] = *params.TopK
+		}
+		if params.RepetitionPenalty != nil {
+			entry["repetitionPenalty"] = *params.RepetitionPenalty
+		}
+		if params.FrequencyPenalty != nil {
+			entry["frequencyPenalty"] = *params.FrequencyPenalty
+		}
+		if params.PresencePenalty != nil {
+			entry["presencePenalty"] = *params.PresencePenalty
+		}
+		if params.MaxTokens != nil {
+			entry["maxTokens"] = *params.MaxTokens
+		}
+		if params.ContextLength != nil {
+			entry["contextLength"] = *params.ContextLength
+		}
+		if params.Stream != nil {
+			entry["stream"] = *params.Stream
+		}
+
+		currentMap[target] = entry
+		existing["modelParameters"] = currentMap
+		return nil
+	})
+}
+
+// DeleteModelParameters removes parameter overrides for a model or combo name.
+func (r *Repo) DeleteModelParameters(target string) error {
+	return r.updateSettings(func(existing map[string]any) error {
+		currentMap, _ := existing["modelParameters"].(map[string]any)
+		if currentMap == nil {
+			return nil
+		}
+		delete(currentMap, target)
+		existing["modelParameters"] = currentMap
+		return nil
+	})
+}
+
+// GetModelParameters returns all model and combo parameter overrides.
+func (r *Repo) GetModelParameters() (map[string]ModelParameters, error) {
+	settings, err := r.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	if settings.ModelParameters == nil {
+		return make(map[string]ModelParameters), nil
+	}
+	return settings.ModelParameters, nil
+}
+
+// GetModelParametersForTarget returns the parameter overrides for target if configured.
+func (r *Repo) GetModelParametersForTarget(target string) (*ModelParameters, error) {
+	settings, err := r.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	return settings.LookupModelParameters(target), nil
+}

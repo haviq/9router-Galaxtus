@@ -153,6 +153,9 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			if patched, changed := toolFill.Fill(payload); changed {
 				payload = patched
 			}
+			if rule := RemaskRuleFromContext(ctx); rule != nil {
+				payload = MaskSSEChunk(payload, rule)
+			}
 			if metrics.TTFT == 0 {
 				metrics.TTFT = time.Since(startTime).Milliseconds()
 			}
@@ -417,6 +420,9 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 		return guardrailBlockedError()
 	}
 	body = filtered
+	if rule := RemaskRuleFromContext(ctx); rule != nil {
+		body = MaskResponseJSON(body, rule)
+	}
 
 	// A /v1/responses client on a Chat Completions upstream needs the answer in
 	// the Responses shape; translate marks a Claude client, which it is not.

@@ -17,6 +17,7 @@
   import ConnectionsView from './components/connections/ConnectionsView.svelte'
   import OAuthCallbackView from './components/connections/OAuthCallbackView.svelte'
   import EndpointView from './components/EndpointView.svelte'
+  import ApiKeysView from './components/keys/ApiKeysView.svelte'
   import LoginView from './components/LoginView.svelte'
   import MediaKindView from './components/media/MediaKindView.svelte'
   import MediaProviderDetail from './components/media/MediaProviderDetail.svelte'
@@ -35,6 +36,11 @@
   import TerminalView from './components/TerminalView.svelte'
   import TokenSaverView from './components/TokenSaverView.svelte'
   import JailbreakView from './components/JailbreakView.svelte'
+  import ModelStatusView from './components/ModelStatusView.svelte'
+  import HttpRewriteView from './components/HttpRewriteView.svelte'
+  import PlaygroundView from './components/PlaygroundView.svelte'
+  import ModelRemaskView from './components/remask/ModelRemaskView.svelte'
+  import ClientPortalView from './components/portal/ClientPortalView.svelte'
   import TopBar from './components/TopBar.svelte'
   import { parseMediaProvider, parseProviderId, pathToTab, providerPath, mediaProviderPath, TAB_ROUTES, type ActiveTab, type MediaProviderRoute } from './lib/router'
   import { PROVIDER_CATALOG } from './lib/providers'
@@ -267,7 +273,11 @@
   })
   const pageMeta: Record<ActiveTab, { title: string; description: string }> = {
     login: { title: 'Login', description: 'Authenticate to access 9router-go' },
-    endpoint: { title: 'Endpoint & Key', description: 'API endpoint and key configuration' },
+    endpoint: { title: 'API Endpoint', description: 'Local, Tunnel, and Tailscale connection endpoints' },
+    keys: {
+      title: 'API Key Management',
+      description: 'Monitor real-time connections, caller telemetry, IP allowlists, and rate limits',
+    },
     connections: { title: 'Providers & Endpoints', description: 'Manage your AI provider connections' },
     combos: { title: 'Combo & Routing', description: 'Model combos and failover strategies' },
     // The two moved tabs are sections of the Usage page, so the TopBar keeps
@@ -276,6 +286,7 @@
     'usage-compression': { title: 'Usage & Analytics', description: 'Monitor your API usage, token consumption, and request logs' },
     analytics: { title: 'Usage & Analytics', description: 'Monitor your API usage, token consumption, and request logs' },
     quota: { title: 'Quota Tracker', description: 'Track and manage your API quota limits' },
+    'model-status': { title: 'Model Status', description: 'Every routable model id with the injection verdict it resolves to right now' },
     'token-saver': { title: 'Token Saver', description: 'Compress prompts and outputs to save tokens' },
     'cli-tools': { title: 'CLI Tools', description: 'Configure CLI tools and API keys' },
     'media-embedding': { title: 'Embedding Models', description: 'Vector embeddings and semantic retrieval' },
@@ -294,7 +305,7 @@
       description: 'Encrypt provider credentials at rest, and scan prompts for personal data and injection attempts before they leave the gateway',
     },
     plans: { title: 'Plans', description: 'Per-key quota plans and policy resolution' },
-    jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
+    jailbreak: { title: 'Prompt Injection', description: 'Attach a system prompt to any model, combo, or every request' },
   }
 
   function handleOpenNewCombo() {
@@ -315,6 +326,8 @@
       <p class="text-text-muted mt-4">Loading...</p>
     </div>
   </div>
+{:else if activeTab === 'portal'}
+  <ClientPortalView />
 {:else if (requireLogin && !isAuthenticatedState) || activeTab === 'login'}
   <LoginView
     onSuccess={() => {
@@ -405,6 +418,8 @@
           {:else}
             {#if activeTab === 'endpoint'}
               <EndpointView {apiKeys} {settings} onRefresh={loadData} navigate={(tab) => navigate(tab)} />
+            {:else if activeTab === 'keys'}
+              <ApiKeysView {apiKeys} onRefresh={loadData} />
             {:else if activeTab === 'connections'}
               <ConnectionsView
                 {connections}
@@ -416,6 +431,8 @@
               />
             {:else if activeTab === 'combos'}
               <CombosView {combos} {connections} {providerNodes} onRefresh={loadData} bind:isCreatingOpen={isCreateComboOpen} />
+            {:else if activeTab === 'remask'}
+              <ModelRemaskView />
             {:else if activeTab === 'analytics' || activeTab === 'usage-cache' || activeTab === 'usage-compression'}
               <!-- Cache and Compression Analytics are Usage sections (#200);
                    AnalyticsView renders all four sections under one header. -->
@@ -612,6 +629,12 @@
               <PlansView />
             {:else if activeTab === 'jailbreak'}
               <JailbreakView />
+            {:else if activeTab === 'model-status'}
+              <ModelStatusView />
+            {:else if activeTab === 'playground'}
+              <PlaygroundView />
+            {:else if activeTab === 'http-rewrite'}
+              <HttpRewriteView {settings} onRefresh={loadData} />
             {/if}
           {/if}
         </div>

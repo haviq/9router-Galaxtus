@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ComboStrategy defines routing strategy, sticky limit, and judge model for a combo.
@@ -111,6 +112,11 @@ type SettingsData struct {
 	SystemPromptEnabled     bool            `json:"systemPromptEnabled"`
 	SystemPromptPrefix      string          `json:"systemPromptPrefix,omitempty"`
 	SystemPromptSuffix      string          `json:"systemPromptSuffix,omitempty"`
+	ChatRewriteEnabled      bool            `json:"chatRewriteEnabled"`
+	ChatRewriteSystem       string          `json:"chatRewriteSystem,omitempty"`
+	ChatRewriteAssistant    string          `json:"chatRewriteAssistant,omitempty"`
+	ChatRewriteTemperature  float64         `json:"chatRewriteTemperature,omitempty"`
+	ChatRewriteTopP         float64         `json:"chatRewriteTopP,omitempty"`
 	HeadroomUrl             string          `json:"headroomUrl"`
 	// HeadroomEnabled is the master switch for in-flight compression. It is
 	// separate from HeadroomUrl because the URL has a default the panel fills
@@ -150,6 +156,72 @@ type SettingsData struct {
 	// when an operator asks for it. See usage_retention_ledger.go.
 	UsageHistoryRetentionDays int                         `json:"usageHistoryRetentionDays,omitempty"`
 	ProviderThinking          map[string]ProviderThinking `json:"providerThinking,omitempty"`
+	ModelParameters           map[string]ModelParameters  `json:"modelParameters,omitempty"`
+}
+
+// ModelParameters defines parameter overrides for a specific model or combo.
+type ModelParameters struct {
+	Temperature       *float64 `json:"temperature,omitempty"`
+	TopP              *float64 `json:"topP,omitempty"`
+	TopK              *int     `json:"topK,omitempty"`
+	RepetitionPenalty *float64 `json:"repetitionPenalty,omitempty"`
+	FrequencyPenalty  *float64 `json:"frequencyPenalty,omitempty"`
+	PresencePenalty   *float64 `json:"presencePenalty,omitempty"`
+	MaxTokens         *int     `json:"maxTokens,omitempty"`
+	ContextLength     *int     `json:"contextLength,omitempty"`
+	Stream            *string  `json:"stream,omitempty"` // "on", "off", "default"
+}
+
+// LookupModelParameters looks up parameter overrides for a model or combo name.
+// Resolution order:
+// 1. Exact match (case-sensitive)
+// 2. Case-insensitive match
+// 3. Short name match (if target has provider prefix like "kr/claude-opus-5", check "claude-opus-5")
+// 4. Suffix match (if target is "claude-opus-5", check any entry ending with "/claude-opus-5")
+func (s *SettingsData) LookupModelParameters(target string) *ModelParameters {
+	if s == nil || len(s.ModelParameters) == 0 || target == "" {
+		return nil
+	}
+
+	// 1. Exact match
+	if p, ok := s.ModelParameters[target]; ok {
+		cp := p
+		return &cp
+	}
+
+	// 2. Case-insensitive match
+	for k, p := range s.ModelParameters {
+		if strings.EqualFold(k, target) {
+			cp := p
+			return &cp
+		}
+	}
+
+	// 3. Stripped provider prefix
+	if idx := strings.Index(target, "/"); idx != -1 {
+		shortName := target[idx+1:]
+		if p, ok := s.ModelParameters[shortName]; ok {
+			cp := p
+			return &cp
+		}
+		for k, p := range s.ModelParameters {
+			if strings.EqualFold(k, shortName) {
+				cp := p
+				return &cp
+			}
+		}
+	} else {
+		// 4. Prefix match in keys
+		suffix := "/" + target
+		for k, p := range s.ModelParameters {
+			if strings.HasSuffix(strings.ToLower(k), strings.ToLower(suffix)) {
+				cp := p
+				return &cp
+			}
+		}
+	}
+
+	return nil
 }
 
 // ProviderThinking is one provider's operator reasoning override, mirroring
@@ -190,6 +262,9 @@ func DefaultSettings() *SettingsData {
 		SystemPromptEnabled:     false,
 		SystemPromptPrefix:      "",
 		SystemPromptSuffix:      "",
+		ChatRewriteEnabled:      true,
+		ChatRewriteTemperature:  0.9,
+		ChatRewriteTopP:         0.95,
 		HeadroomUrl:             "http://localhost:8787",
 		HeadroomKompress:        true,
 		HeadroomTimeoutMs:       3000,
@@ -255,7 +330,19 @@ func cloneSettings(s *SettingsData) *SettingsData {
 	out.CapacityAdapter = cloneCapacityAdapters(s.CapacityAdapter)
 	out.ProviderOverrides = cloneProviderOverrides(s.ProviderOverrides)
 	out.ProviderThinking = cloneProviderThinking(s.ProviderThinking)
+	out.ModelParameters = cloneModelParameters(s.ModelParameters)
 	return &out
+}
+
+func cloneModelParameters(m map[string]ModelParameters) map[string]ModelParameters {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]ModelParameters, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func cloneBoolMap(m map[string]bool) map[string]bool {

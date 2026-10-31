@@ -65,6 +65,9 @@ func (h *DashboardHandler) HandleUpdateApiKey(w http.ResponseWriter, r *http.Req
 		// the flat `models` list. Omitted leaves the stored allowlist alone;
 		// present is validated and written whole (see apikeys_access.go).
 		Access *keyAccessInput `json:"access"`
+		// Creator & IP Management
+		CreatedBy  *string `json:"createdBy"`
+		AllowedIPs *string `json:"allowedIps"`
 	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -195,6 +198,18 @@ func (h *DashboardHandler) HandleUpdateApiKey(w http.ResponseWriter, r *http.Req
 	}
 	if req.PlanID != nil {
 		if err := h.Repo.SetApiKeyPlan(id, planID); err != nil {
+			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.CreatedBy != nil {
+		if err := h.Repo.SetApiKeyCreatedBy(id, strings.TrimSpace(*req.CreatedBy)); err != nil {
+			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.AllowedIPs != nil {
+		if err := h.Repo.SetApiKeyAllowedIPs(id, strings.TrimSpace(*req.AllowedIPs)); err != nil {
 			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

@@ -27,6 +27,7 @@
     prompt: string
     kind: string
     geminiSafety: boolean
+    injectMode: string
     source: string
     keywords: JailbreakKeyword[]
     excludes: JailbreakKeyword[]
@@ -37,6 +38,7 @@
     prompt: '',
     kind: '',
     geminiSafety: false,
+    injectMode: 'prepend',
     source: '',
     keywords: [],
     excludes: [],
@@ -70,6 +72,7 @@
   // upload can read it, and the list is rendered with a remove button per row.
   let pickedFiles = $state<File[]>([])
   let uploading = $state(false)
+  let installingPack = $state(false)
   let dragging = $state(false)
   // #3 Test-match: type a model id, see which preset wins and why.
   let testMatchId = $state('')
@@ -200,6 +203,7 @@
     return e instanceof Error ? e.message : String(e)
   }
 
+
   async function importFromGithub() {
     const urls = importUrls
     if (urls.length === 0) {
@@ -271,6 +275,28 @@
     pickedFiles = []
     uploading = false
     await load()
+  }
+
+  // Install the SYADAGENTIC technique pack. The server fetches and parses the
+  // collection into one preset per T-numbered technique, so a single click
+  // lands the whole pack without the operator typing a repo path.
+  async function installSyadagenticPack() {
+    installingPack = true
+    importStatus = ''
+    importResult = null
+    try {
+      const res = await api.importSyadagenticPack()
+      importResult = res
+      importStatus =
+        res.refused.length === 0
+          ? `Installed ${res.imported.length} technique preset(s).`
+          : `Installed ${res.imported.length}, skipped ${res.refused.length}.`
+      await load()
+    } catch (e) {
+      importStatus = `Pack install failed: ${errorMessage(e)}`
+    } finally {
+      installingPack = false
+    }
   }
   // The drop zone accepts files (queued for upload) or a URL (imported directly).
   function onDrop(event: DragEvent) {
@@ -759,6 +785,7 @@
       prompt: '',
       kind: '',
       geminiSafety: false,
+      injectMode: 'prepend',
       source: '',
       keywords: [],
       excludes: [],
@@ -778,6 +805,7 @@
       prompt: preset.prompt || '',
       kind: preset.kind || '',
       geminiSafety: !!preset.geminiSafety,
+      injectMode: preset.injectMode || 'prepend',
       source: preset.source || '',
       keywords: preset.keywords || [],
       excludes: preset.excludes || [],
@@ -801,6 +829,7 @@
         prompt: presetForm.prompt,
         geminiSafety: presetForm.geminiSafety,
         kind: presetForm.kind.trim() || undefined,
+        injectMode: presetForm.injectMode,
         source: presetForm.source.trim() || undefined,
         keywords: presetForm.keywords,
         excludes: presetForm.excludes,
@@ -1163,7 +1192,7 @@
                 {/if}
               </div>
               <div class="text-[11px] text-text-subtle truncate">
-                {preset.id}{preset.geminiSafety ? ' · safety' : ''}{preset.source ? ' · ' + preset.source : ''}{preset.keywords?.length
+                {preset.id}{preset.injectMode && preset.injectMode !== 'prepend' ? ' · ' + preset.injectMode : ''}{preset.geminiSafety ? ' · safety' : ''}{preset.source ? ' · ' + preset.source : ''}{preset.keywords?.length
                   ? ' · ' + preset.keywords.length + ' keyword' + (preset.keywords.length > 1 ? 's' : '')
                   : ''}{preset.excludes?.length ? ' · ' + preset.excludes.length + ' excluded' : ''}
                 {#if presetUsage[preset.id ?? ''] !== undefined}
@@ -1410,6 +1439,7 @@
     {/if}
       {/if}
   </Card>
+
 </div>
 
 {#if testMatchOpen}
@@ -1654,6 +1684,21 @@
           <option value={kind}></option>
         {/each}
       </datalist>
+      <label class="block space-y-1.5">
+        <span class="text-xs text-text-muted">System injection mode</span>
+        <select
+          bind:value={presetForm.injectMode}
+          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
+        >
+          <option value="prepend">Prepend — ahead of the existing system content</option>
+          <option value="append">Append — after the existing system content</option>
+          <option value="replace">Replace — drop the existing system content</option>
+        </select>
+      </label>
+      <p class="text-[11px] text-text-subtle">
+        Prepend (default) leads with the prompt and keeps what the client sent. Append refines after it.
+        Replace sends only the prompt, for a hard system override.
+      </p>
       <label class="flex items-center gap-2 cursor-pointer select-none">
         <input type="checkbox" bind:checked={presetForm.geminiSafety} class="w-4 h-4 accent-brand-500" />
         <span class="text-sm text-text-main">Relax Gemini safety filters</span>
@@ -1793,6 +1838,24 @@
             Each URL becomes its own preset, named after its source.
           </p>
         {/if}
+        <div class="pt-3 mt-1 border-t border-border-subtle space-y-2">
+          <p class="text-[11px] text-text-subtle">
+            <strong class="text-text-muted">SYADAGENTIC pack</strong> — installs the 40 numbered
+            prompt-injection techniques (T1–T119) from
+            <span class="font-code">Sekolah76/syadagentic</span> as individual presets, one per
+            technique. Re-running refreshes the pack in place.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="w-full"
+            icon="download"
+            onclick={installSyadagenticPack}
+            disabled={installingPack}
+          >
+            {installingPack ? 'Installing pack…' : 'Install SYADAGENTIC pack'}
+          </Button>
+        </div>
         {#if importStatus}<p class="text-xs text-text-muted text-center">{importStatus}</p>{/if}
       </div>
     {/if}

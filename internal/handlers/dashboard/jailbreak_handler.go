@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,7 +128,11 @@ func validateJailbreakRules(doc *db.JailbreakDoc) error {
 	if err != nil {
 		return err
 	}
-	doc.Keywords, doc.Excludes = keywords, excludes
+	mode, err := db.NormalizeJailbreakInjectMode(doc.InjectMode)
+	if err != nil {
+		return err
+	}
+	doc.Keywords, doc.Excludes, doc.InjectMode = keywords, excludes, mode
 	return nil
 }
 
@@ -333,6 +338,7 @@ func (h *DashboardHandler) HandleDuplicateJailbreakPreset(w http.ResponseWriter,
 		Prompt:       src.Prompt,
 		Kind:         src.Kind,
 		GeminiSafety: src.GeminiSafety,
+		InjectMode:   src.InjectMode,
 		Source:       src.Source,
 		Keywords:     src.Keywords,
 		Excludes:     src.Excludes,
@@ -390,12 +396,10 @@ func (h *DashboardHandler) HandlePreviewJailbreak(w http.ResponseWriter, r *http
 	}
 	// The preview carries the caller's own messages, so an empty list is a
 	// caller mistake rather than a reason to invent content.
-	msgs := make([]map[string]any, 0, len(req.Messages)+1)
-	msgs = append(msgs, req.Messages...)
 	out := map[string]any{
 		"injected": match.Injected,
 		"reason":   match.Reason,
-		"messages": msgs,
+		"messages": req.Messages,
 	}
 	if match.Injected && match.PresetID != "" {
 		doc, err := h.Repo.GetJailbreakPreset(match.PresetID)
@@ -407,12 +411,46 @@ func (h *DashboardHandler) HandlePreviewJailbreak(w http.ResponseWriter, r *http
 			out["presetId"] = doc.ID
 			out["presetName"] = doc.Name
 			out["prompt"] = doc.Prompt
-			out["messages"] = append([]map[string]any{
-				{"role": "system", "content": doc.Prompt},
-			}, msgs...)
+			out["injectMode"] = previewInjectMode(doc.InjectMode)
+			out["messages"] = previewMessages(req.Messages, doc.Prompt, doc.InjectMode)
 		}
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, out)
+}
+
+// previewInjectMode maps an unset mode to prepend so the preview reports the
+// mode that will actually be applied.
+func previewInjectMode(mode string) string {
+	if mode == "" {
+		return db.JailbreakInjectPrepend
+	}
+	return mode
+}
+
+// previewMessages renders the same messages list the forward path would carry,
+// so the operator sees prepend/append/replace on their own text. It mirrors the
+// chat side's applySystemPrompt for the OpenAI messages shape the preview uses.
+func previewMessages(messages []map[string]any, prompt string, mode string) []map[string]any {
+	switch previewInjectMode(mode) {
+	case db.JailbreakInjectAppend:
+		return append(append([]map[string]any{}, messages...), systemMessage(prompt)[0])
+	case db.JailbreakInjectReplace:
+		out := make([]map[string]any, 0, len(messages))
+		for _, m := range messages {
+			if role, _ := m["role"].(string); role == "system" {
+				continue
+			}
+			out = append(out, m)
+		}
+		return append(append([]map[string]any{}, systemMessage(prompt)...), out...)
+	default:
+		return append(append([]map[string]any{}, systemMessage(prompt)...), messages...)
+	}
+}
+
+// systemMessage builds the one-element OpenAI system message the preview adds.
+func systemMessage(prompt string) []map[string]any {
+	return []map[string]any{{"role": "system", "content": prompt}}
 }
 
 // HandleReorderJailbreakPresets stores the operator's arrangement. PUT
@@ -456,8 +494,15 @@ func (h *DashboardHandler) HandleReorderJailbreakPresets(w http.ResponseWriter, 
 // route builds, minus the per-key access filter — an operator holding a
 // dashboard session already sees every connection.
 func (h *DashboardHandler) HandleJailbreakModelCatalog(w http.ResponseWriter, r *http.Request) {
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"models": h.jailbreakModelIDs(r.Context())})
+}
+
+// jailbreakModelIDs lists every id the gateway can route, sorted, for the
+// dashboard's bulk-arm picker and its status table. Both ask the same question
+// of the same handler, so the build lives here rather than twice.
+func (h *DashboardHandler) jailbreakModelIDs(ctx context.Context) []string {
 	chatH := chat.NewChatHandler(h.Repo, nil)
-	result := chatH.BuildModelsListResult(r.Context(), chat.ListModeCatalog)
+	result := chatH.BuildModelsListResult(ctx, chat.ListModeCatalog)
 	ids := make([]string, 0, len(result.Models))
 	for _, m := range result.Models {
 		if m.ID == "" {
@@ -466,7 +511,116 @@ func (h *DashboardHandler) HandleJailbreakModelCatalog(w http.ResponseWriter, r 
 		ids = append(ids, m.ID)
 	}
 	sort.Strings(ids)
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"models": ids})
+	return ids
+}
+
+// maxJailbreakStatusIDs bounds one sweep. A full catalog is ~1500 ids and the
+// resolver reads an in-memory snapshot, so the cap is only there to keep a
+// hand-written body from becoming an unbounded allocation.
+const maxJailbreakStatusIDs = 5000
+
+// jailbreakStatus is one model's resolved state: the id the client would send,
+// plus the verdict the request path's own resolver gives it.
+type jailbreakStatus struct {
+	ID string `json:"id"`
+	// Status buckets the verdict for the summary chips: injected, excluded, off.
+	Status string `json:"status"`
+	// PresetKind and InjectMode are the winning preset's instruction-file kind
+	// and how its prompt reaches the body, so the table can show what would be
+	// applied without opening the preset.
+	PresetKind string `json:"presetKind,omitempty"`
+	InjectMode string `json:"injectMode,omitempty"`
+	// Usage is the winning preset's lifetime injection count, so the table can
+	// tell a preset that earns its keep from one that never fires.
+	Usage int64 `json:"usage,omitempty"`
+	db.JailbreakMatch
+}
+
+// enrichStatus fills the winning preset's display fields onto one row. It is a
+// no-op for a row that resolved to nothing, or one whose preset has since gone.
+func enrichStatus(row *jailbreakStatus, presets map[string]*db.JailbreakDoc, usage map[string]int64) {
+	if !row.Injected || row.PresetID == "" {
+		return
+	}
+	row.Usage = usage[row.PresetID]
+	if doc, ok := presets[row.PresetID]; ok && doc != nil {
+		row.PresetKind = doc.Kind
+		row.InjectMode = previewInjectMode(doc.InjectMode)
+	}
+}
+
+func jailbreakStatusBucket(m *db.JailbreakMatch) string {
+	switch {
+	case m.Injected:
+		return "injected"
+	case m.Reason == "global-exclude" || m.Reason == "preset-exclude":
+		return "excluded"
+	default:
+		return "off"
+	}
+}
+
+// HandleJailbreakModelStatus answers "which models are injected right now?"
+// for the dashboard's status table. POST /api/jailbreak/models/status with an
+// optional {"ids":[…]} — an absent or empty list sweeps the whole catalog.
+//
+// Each id goes through ExplainJailbreakDoc, the same resolver a real request
+// uses, so the answer counts keyword coverage and combo legs rather than just
+// exact bindings, and reports which rule won per model.
+func (h *DashboardHandler) HandleJailbreakModelStatus(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 256*1024))
+	if err != nil {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	// No body at all is the common case (sweep everything), so an empty body is
+	// not a parse error the way it is for the other POST routes.
+	if strings.TrimSpace(string(body)) != "" {
+		if err := json.Unmarshal(body, &req); err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	ids := req.IDs
+	if len(ids) == 0 {
+		ids = h.jailbreakModelIDs(r.Context())
+	}
+	if len(ids) > maxJailbreakStatusIDs {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "too many model ids")
+		return
+	}
+	models := make([]jailbreakStatus, 0, len(ids))
+	counts := map[string]int{"injected": 0, "excluded": 0, "off": 0}
+	// Preset metadata and usage counters are read once for the whole sweep:
+	// they are display-only enrichment, so a read failure degrades the row
+	// rather than failing the table.
+	presets, _ := h.Repo.ListJailbreakPresets()
+	presetByID := make(map[string]*db.JailbreakDoc, len(presets))
+	for _, p := range presets {
+		if p != nil {
+			presetByID[p.ID] = p
+		}
+	}
+	usage, _ := h.Repo.JailbreakUsage()
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" || len(id) > 300 {
+			continue
+		}
+		match, err := h.Repo.ExplainJailbreakDoc(id)
+		if err != nil {
+			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		status := jailbreakStatus{ID: id, Status: jailbreakStatusBucket(match), JailbreakMatch: *match}
+		enrichStatus(&status, presetByID, usage)
+		models = append(models, status)
+		counts[status.Status]++
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"models": models, "counts": counts})
 }
 
 // HandleDeleteJailbreakModel removes one binding outright.

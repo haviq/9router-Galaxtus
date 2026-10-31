@@ -20,6 +20,7 @@ func parseSettings(rawData string) (*SettingsData, bool) {
 	s := DefaultSettings()
 	applyRTKSettings(s, raw)
 	applyPromptSettings(s, raw)
+	applyRewriteSettings(s, raw)
 	applyHeadroomSettings(s, raw)
 	applyCacheSettings(s, raw)
 	applyObservabilitySettings(s, raw)
@@ -29,6 +30,7 @@ func parseSettings(rawData string) (*SettingsData, bool) {
 	applyProviderThinking(s, raw)
 	applyCapacityAdapters(s, raw)
 	applyProviderOverrides(s, raw)
+	applyModelParameters(s, raw)
 	return s, true
 }
 
@@ -186,5 +188,23 @@ func applyFallbackSettings(s *SettingsData, raw map[string]any) {
 	}
 	if v, ok := raw["comboStickyRoundRobinLimit"].(float64); ok && v > 0 {
 		s.ComboStickyRoundRobinLimit = int(v)
+	}
+}
+
+func applyRewriteSettings(s *SettingsData, raw map[string]any) {
+	if v, ok := raw["chatRewriteEnabled"].(bool); ok {
+		s.ChatRewriteEnabled = v
+	}
+	if v := handlerutil.GetString(raw, "chatRewriteSystem"); v != "" {
+		s.ChatRewriteSystem = v
+	}
+	if v := handlerutil.GetString(raw, "chatRewriteAssistant"); v != "" {
+		s.ChatRewriteAssistant = v
+	}
+	if v, ok := raw["chatRewriteTemperature"].(float64); ok && v >= 0 {
+		s.ChatRewriteTemperature = v
+	}
+	if v, ok := raw["chatRewriteTopP"].(float64); ok && v >= 0 {
+		s.ChatRewriteTopP = v
 	}
 }

@@ -404,6 +404,12 @@ var goOnlyColumns = [][3]string{
 	// models column stays the wire contract — so upstream, which declares
 	// neither the column nor the concept, ignores it.
 	{"combos", "matchRules", "TEXT DEFAULT '[]'"},
+	// API Key Manager: creator & IP audit/security
+	{"apiKeys", "createdBy", "TEXT DEFAULT ''"},
+	{"apiKeys", "lastUsedIP", "TEXT DEFAULT ''"},
+	{"apiKeys", "allowedIPs", "TEXT DEFAULT ''"},
+	// Feature 1: Prepaid Billing Saldo (-1 = unlimited, >= 0 = balance in currency)
+	{"apiKeys", "balance", "REAL DEFAULT -1"},
 }
 
 // keiRouterTables are Go-only tables for KeiRouter port features.
@@ -444,6 +450,22 @@ var keiRouterTables = []tableDef{
 		},
 	},
 	{
+		name: "api_key_clients",
+		columns: [][2]string{
+			{"api_key_id", "TEXT NOT NULL"},
+			{"ip", "TEXT NOT NULL"},
+			{"user_agent", "TEXT DEFAULT ''"},
+			{"request_count", "INTEGER NOT NULL DEFAULT 1"},
+			{"first_seen_at", "TEXT NOT NULL"},
+			{"last_seen_at", "TEXT NOT NULL"},
+		},
+		primaryKey: "PRIMARY KEY (api_key_id, ip)",
+		indexes: []string{
+			"CREATE INDEX IF NOT EXISTS idx_akc_key ON api_key_clients(api_key_id)",
+			"CREATE INDEX IF NOT EXISTS idx_akc_last ON api_key_clients(last_seen_at DESC)",
+		},
+	},
+	{
 		name: "guardrail_policies",
 		columns: [][2]string{
 			{"id", "TEXT PRIMARY KEY"},
@@ -458,6 +480,21 @@ var keiRouterTables = []tableDef{
 		},
 		indexes: []string{
 			"CREATE UNIQUE INDEX IF NOT EXISTS idx_grp_scope ON guardrail_policies(tenant_id, scope, scope_id)",
+		},
+	},
+	{
+		name: "model_pricing",
+		columns: [][2]string{
+			{"id", "TEXT PRIMARY KEY"},
+			{"model_pattern", "TEXT NOT NULL UNIQUE"},
+			{"price_input_1k", "REAL NOT NULL DEFAULT 0"},
+			{"price_output_1k", "REAL NOT NULL DEFAULT 0"},
+			{"currency", "TEXT NOT NULL DEFAULT 'IDR'"},
+			{"created_at", "TEXT NOT NULL"},
+			{"updated_at", "TEXT NOT NULL"},
+		},
+		indexes: []string{
+			"CREATE INDEX IF NOT EXISTS idx_mp_pattern ON model_pricing(model_pattern)",
 		},
 	},
 	{

@@ -50,6 +50,7 @@ func TestSetupServerRouter_JailbreakRoutesAreLive(t *testing.T) {
 		{http.MethodPut, "/api/jailbreak/presets"},
 		{http.MethodGet, "/api/jailbreak/models"},
 		{http.MethodPut, "/api/jailbreak/models"},
+		{http.MethodPost, "/api/jailbreak/models/status"},
 		{http.MethodGet, "/api/jailbreak/excludes"},
 		{http.MethodPut, "/api/jailbreak/excludes"},
 		{http.MethodPost, "/api/jailbreak/import"},

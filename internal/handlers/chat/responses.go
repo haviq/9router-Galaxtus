@@ -95,6 +95,20 @@ func (h *ChatHandler) HandleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply model/combo parameter overrides from settings
+	if h.Repo != nil {
+		if settings, err := h.Repo.GetSettings(); err == nil && settings != nil {
+		if params := settings.LookupModelParameters(reqBody.Model); params != nil {
+			if updated, streamOverridden, newStreamVal, err := ApplyModelParametersToPayload(body, params); err == nil {
+				body = updated
+				if streamOverridden {
+					reqBody.Stream = newStreamVal
+				}
+			}
+		}
+	}
+	}
+
 	// Per-key model policy: 403 before the responses bridge or any connection
 	// selection.
 	if !h.enforceModelAccess(w, r, modelName) {

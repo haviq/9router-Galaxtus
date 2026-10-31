@@ -102,6 +102,12 @@
   let enableSystemPrompt = $state(false)
   let systemPromptPrefix = $state('')
   let systemPromptSuffix = $state('')
+  // Chat HTTP Rewrite Flow State
+  let chatRewriteEnabled = $state(true)
+  let chatRewriteSystem = $state('')
+  let chatRewriteAssistant = $state('')
+  let chatRewriteTemperature = $state(0.9)
+  let chatRewriteTopP = $state(0.95)
   let appName = $state('')
   let appLogoUrl = $state('')
   let isUploadingLogo = $state(false)
@@ -308,6 +314,13 @@
       enableSystemPrompt = !!settings.systemPromptEnabled
       if (typeof settings.systemPromptPrefix === 'string') systemPromptPrefix = settings.systemPromptPrefix
       if (typeof settings.systemPromptSuffix === 'string') systemPromptSuffix = settings.systemPromptSuffix
+
+      // Chat HTTP Rewrite Flow
+      if (typeof settings.chatRewriteEnabled === 'boolean') chatRewriteEnabled = settings.chatRewriteEnabled
+      if (typeof settings.chatRewriteSystem === 'string') chatRewriteSystem = settings.chatRewriteSystem
+      if (typeof settings.chatRewriteAssistant === 'string') chatRewriteAssistant = settings.chatRewriteAssistant
+      if (typeof settings.chatRewriteTemperature === 'number') chatRewriteTemperature = settings.chatRewriteTemperature
+      if (typeof settings.chatRewriteTopP === 'number') chatRewriteTopP = settings.chatRewriteTopP
 
       // SSO
       if (settings.authMode === 'oidc' || settings.authMode === 'saml') authMode = settings.authMode
@@ -519,6 +532,11 @@
         systemPromptEnabled: enableSystemPrompt,
         systemPromptPrefix,
         systemPromptSuffix,
+        chatRewriteEnabled,
+        chatRewriteSystem,
+        chatRewriteAssistant,
+        chatRewriteTemperature: Number(chatRewriteTemperature),
+        chatRewriteTopP: Number(chatRewriteTopP),
         appName: appName.trim(),
         appLogoUrl: appLogoUrl.trim(),
         authMode,
@@ -1349,6 +1367,134 @@
         </div>
       </div>
     </Card>
+
+    <!-- SECTION 7: Chat HTTP Rewrite Flow (/v1/chat/completions) -->
+    <Card padding="md" class="space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-border">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[18px] text-brand-500">alt_route</span>
+          <h2 class="text-sm font-bold text-text-main">HTTP Rewrite Flow (/v1/chat/completions)</h2>
+        </div>
+        <Toggle
+          checked={chatRewriteEnabled}
+          size="sm"
+          label="Enable HTTP Rewrite"
+          onChange={(val: boolean) => (chatRewriteEnabled = val)}
+        />
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <div class="p-3 rounded-xl bg-bg border border-border space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-text-subtle uppercase font-mono tracking-wider font-semibold">Trigger &amp; Pipeline</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-500 font-semibold border border-brand-500/20">
+              Path: /v1/chat/completions
+            </span>
+          </div>
+          <p class="text-[11px] text-text-muted leading-relaxed">
+            Intersects incoming requests whose path contains <code class="font-mono text-text-main">/v1/chat/completions</code>.
+            Parses JSON body, strips all <code class="font-mono text-text-main">role: system</code> messages, inserts 2 new messages at index 0 (<code class="font-mono text-text-main">system</code>) &amp; index 1 (<code class="font-mono text-text-main">assistant</code>), enforces Temperature &amp; Top-P, and preserves all request headers unmodified.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1">
+            <div class="flex justify-between items-center">
+              <label for="rewrite-temp" class="block font-semibold text-text-main">Temperature</label>
+              <span class="text-[11px] font-mono text-brand-500 font-bold">{chatRewriteTemperature}</span>
+            </div>
+            <input
+              id="rewrite-temp"
+              type="number"
+              step="0.05"
+              min="0"
+              max="2"
+              bind:value={chatRewriteTemperature}
+              class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <div class="flex justify-between items-center">
+              <label for="rewrite-top-p" class="block font-semibold text-text-main">Top P</label>
+              <span class="text-[11px] font-mono text-brand-500 font-bold">{chatRewriteTopP}</span>
+            </div>
+            <input
+              id="rewrite-top-p"
+              type="number"
+              step="0.05"
+              min="0"
+              max="1"
+              bind:value={chatRewriteTopP}
+              class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label for="rewrite-system" class="block font-semibold text-text-main">
+              1. System Message (Index 0)
+            </label>
+            <button
+              type="button"
+              onclick={async () => {
+                if (navigator?.clipboard?.readText) {
+                  try {
+                    const text = await navigator.clipboard.readText()
+                    if (text) chatRewriteSystem = text
+                  } catch (e) {}
+                }
+              }}
+              class="flex items-center gap-1 text-[11px] text-brand-500 hover:text-brand-400 font-medium transition cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[13px]">content_paste</span>
+              <span>Paste Clipboard</span>
+            </button>
+          </div>
+          <textarea
+            id="rewrite-system"
+            bind:value={chatRewriteSystem}
+            rows="5"
+            spellcheck="false"
+            placeholder="Paste your system prompt text here. It will replace all existing system messages at index 0."
+            class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+          ></textarea>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label for="rewrite-assistant" class="block font-semibold text-text-main">
+              2. Assistant Message (Index 1)
+            </label>
+            <button
+              type="button"
+              onclick={async () => {
+                if (navigator?.clipboard?.readText) {
+                  try {
+                    const text = await navigator.clipboard.readText()
+                    if (text) chatRewriteAssistant = text
+                  } catch (e) {}
+                }
+              }}
+              class="flex items-center gap-1 text-[11px] text-brand-500 hover:text-brand-400 font-medium transition cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[13px]">content_paste</span>
+              <span>Paste Clipboard</span>
+            </button>
+          </div>
+          <textarea
+            id="rewrite-assistant"
+            bind:value={chatRewriteAssistant}
+            rows="4"
+            spellcheck="false"
+            placeholder="Paste your assistant prompt text here. It will be inserted directly after the system message at index 1."
+            class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+          ></textarea>
+        </div>
+      </div>
+    </Card>
+
     <!-- SECTION: White-label branding. The sidebar renders these two values, so
          the card is the only place the product name and logo are set. An empty
          value falls back to the project defaults, which is what an operator who

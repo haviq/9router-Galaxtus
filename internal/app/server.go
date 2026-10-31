@@ -16,6 +16,7 @@ import (
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlers/chat"
+	"9router/proxy/internal/keikey"
 	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/oauth"
@@ -115,6 +116,7 @@ func ProvideServer(p ServerParams) *http.Server {
 			// account reaching the models it pays for. Without this loop the
 			// credential has to be pasted again every few minutes.
 			executor.StartGeminiWebRotation(shutdown.Context(), p.Repo)
+			executor.StartDeepSeekWebKeepAlive(shutdown.Context(), p.Repo)
 			startAutoPingScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 			startModelHealthScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 
@@ -151,6 +153,8 @@ func ProvideServer(p ServerParams) *http.Server {
 			} else {
 				log.Println("Server stopped gracefully")
 			}
+			// Flush pending telemetry writes to SQLite before DB close
+			keikey.FlushTelemetry()
 			return nil
 		},
 	})

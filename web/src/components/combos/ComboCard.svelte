@@ -6,6 +6,7 @@
     Gavel,
     Layers,
     Pencil,
+    Sliders,
     Sparkles,
     Trash2,
     Wand2,
@@ -47,6 +48,7 @@
     onCopy: (name: string, id: string) => void
     onEdit: (combo: Combo) => void
     onDelete: (combo: Combo) => void
+    onConfigureParameters?: (combo: Combo) => void
     isSelected?: boolean
     onToggleSelect?: (combo: Combo) => void
   }
@@ -66,6 +68,7 @@
     onCopy,
     onEdit,
     onDelete,
+    onConfigureParameters,
     isSelected = false,
     onToggleSelect,
   }: Props = $props()
@@ -268,7 +271,7 @@
       </div>
 
       <!-- Icon buttons with labels -->
-      <div class="grid grid-cols-3 gap-1 sm:flex sm:items-center">
+      <div class="grid grid-cols-4 gap-1 sm:flex sm:items-center">
         <button
           type="button"
           onclick={() => onCopy(combo.name, combo.id)}
@@ -292,6 +295,16 @@
         >
           <Pencil class="w-4 h-4" />
           <span class="text-[10px] leading-tight">Edit</span>
+        </button>
+
+        <button
+          type="button"
+          onclick={() => onConfigureParameters?.(combo)}
+          class="flex flex-col items-center justify-center rounded px-2.5 py-1 text-text-muted transition-colors hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-500 cursor-pointer"
+          title="Configure parameters override (Temperature, Top P, Max Tokens, etc.)"
+        >
+          <Sliders class="w-4 h-4" />
+          <span class="text-[10px] leading-tight">Params</span>
         </button>
 
         <button

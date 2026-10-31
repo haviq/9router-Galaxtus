@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	json "encoding/json/v2"
 	"fmt"
+	"strings"
 	"time"
 
 	"9router/proxy/internal/models"
@@ -106,6 +107,88 @@ func (r *Repo) GetProviderNodePrefixMap() (map[string]string, error) {
 		return nil, err
 	}
 	return prefixMap, nil
+}
+
+// PruneOrphanCustomModels deletes custom models in kv (scope='customModels')
+// whose provider is a custom node (starts with 'openai-compatible-' or 'anthropic-compatible-')
+// that no longer exists in providerNodes.
+func PruneOrphanCustomModels(db *sql.DB) (int64, error) {
+	nodeRows, err := db.Query("SELECT id FROM providerNodes")
+	if err != nil {
+		return 0, err
+	}
+	defer nodeRows.Close()
+
+	validNodes := make(map[string]bool)
+	for nodeRows.Next() {
+		var id string
+		if err := nodeRows.Scan(&id); err == nil && id != "" {
+			validNodes[id] = true
+		}
+	}
+	_ = nodeRows.Close()
+
+	kvRows, err := db.Query("SELECT key, value FROM kv WHERE scope = 'customModels'")
+	if err != nil {
+		return 0, err
+	}
+	defer kvRows.Close()
+
+	var toDelete []string
+	for kvRows.Next() {
+		var key, val string
+		if err := kvRows.Scan(&key, &val); err != nil {
+			continue
+		}
+		keyAlias, _, ok := splitCustomModelKey(key)
+		if !ok {
+			parts := strings.Split(key, "|")
+			if len(parts) >= 2 {
+				keyAlias = parts[0]
+			}
+		}
+		valAlias := customModelValueAlias(val)
+
+		isKeyCompatible := strings.HasPrefix(keyAlias, "openai-compatible-") || strings.HasPrefix(keyAlias, "anthropic-compatible-")
+		isValCompatible := strings.HasPrefix(valAlias, "openai-compatible-") || strings.HasPrefix(valAlias, "anthropic-compatible-")
+
+		if isKeyCompatible && !validNodes[keyAlias] {
+			toDelete = append(toDelete, key)
+		} else if isValCompatible && !validNodes[valAlias] {
+			toDelete = append(toDelete, key)
+		}
+	}
+	_ = kvRows.Close()
+
+	if len(toDelete) == 0 {
+		return 0, nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare("DELETE FROM kv WHERE scope = 'customModels' AND key = ?")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	var deletedCount int64
+	for _, k := range toDelete {
+		res, err := stmt.Exec(k)
+		if err == nil {
+			n, _ := res.RowsAffected()
+			deletedCount += n
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deletedCount, nil
 }
 
 // GetProviderNodes returns all provider nodes from the database.

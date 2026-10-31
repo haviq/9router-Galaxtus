@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"9router/proxy/internal/browserlogin"
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/log"
+	"9router/proxy/internal/models"
+	"9router/proxy/internal/proxy/executor"
 )
 
 // The browser sign-in for DeepSeek Web.
@@ -66,5 +69,72 @@ func (h *DashboardHandler) HandleDeepSeekWebBrowserLogin(w http.ResponseWriter, 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"userToken": result.UserToken,
 		"cookie":    result.CookieHeader,
+	})
+}
+
+
+// HandleDeepSeekWebQuickSync receives credentials directly from browser scripts
+// (e.g. console snippet on chat.deepseek.com) and applies them directly to the connection.
+// It supports CORS headers so fetch() from chat.deepseek.com succeeds cleanly.
+func (h *DashboardHandler) HandleDeepSeekWebQuickSync(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var payload struct {
+		ConnectionID string `json:"connectionId"`
+		UserToken    string `json:"userToken"`
+		Cookie       string `json:"cookie"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	token := browserlogin.DeepSeekUserTokenFromLocalStorage(payload.UserToken)
+	if token == "" {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "userToken is required and cannot be empty")
+		return
+	}
+
+	// Find connection for deepseek-web
+	conns, err := h.Repo.GetProviderConnections("deepseek-web", false)
+	if err != nil || len(conns) == 0 {
+		handlerutil.WriteJSONError(w, http.StatusNotFound, "no deepseek-web connection found in 9router")
+		return
+	}
+
+	var targetConn *models.ProviderConnection
+	if payload.ConnectionID != "" {
+		for _, c := range conns {
+			if c.ID == payload.ConnectionID {
+				targetConn = c
+				break
+			}
+		}
+	}
+	if targetConn == nil {
+		targetConn = conns[0]
+	}
+
+	result := &browserlogin.DeepSeekResult{
+		UserToken:    token,
+		CookieHeader: payload.Cookie,
+	}
+
+	if err := executor.StoreDeepSeekCredential(r.Context(), h.Repo, targetConn, result); err != nil {
+		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	log.Info("deepseek-web", "quick-sync session stored successfully", "conn", targetConn.ID)
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"connectionId": targetConn.ID,
+		"message":      "DeepSeek session synced successfully!",
 	})
 }

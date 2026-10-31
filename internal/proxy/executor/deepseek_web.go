@@ -82,7 +82,7 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 	}
 
 	options := resolveDeepSeekModelOptions(envelope.Model, envelope)
-	turn := newDeepSeekTurn(req.Client, deepSeekBaseURL(req.Config), stealth).
+	turn := newDeepSeekTurn(req.Client, req.Config, stealth).
 		withBrowserFingerprint(stealth.cookie, stealth.deviceID)
 
 	// A turn that leaves in lockstep with its neighbours is not what a person

@@ -147,6 +147,7 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		r.Get("/keys/{id}/models", h.HandleGetApiKeyModels)
 		r.Put("/keys/{id}/models", h.HandleSetApiKeyModels)
 		r.Put("/keys/{id}", h.HandleUpdateApiKey)
+		r.Get("/keys/{id}/clients", h.HandleGetApiKeyClients)
 
 		// F-3 Plans: reusable policy templates the keys inherit from.
 		r.Get("/plans", h.HandleListPlans)
@@ -177,6 +178,7 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		r.Post("/jailbreak/presets/{id}/duplicate", h.HandleDuplicateJailbreakPreset)
 		r.Get("/jailbreak/models", h.HandleListJailbreakModels)
 		r.Get("/jailbreak/models/catalog", h.HandleJailbreakModelCatalog)
+		r.Post("/jailbreak/models/status", h.HandleJailbreakModelStatus)
 		r.Put("/jailbreak/models", h.HandleSetJailbreakModel)
 		r.Delete("/jailbreak/models", h.HandleDeleteJailbreakModel)
 		r.Get("/jailbreak/excludes", h.HandleGetJailbreakExcludes)
@@ -199,6 +201,11 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		r.Post("/models/auto-disable", h.HandleAutoDisableModels)
 		r.Get("/models/health", h.HandleGetModelHealth)
 		r.Put("/models/health", h.HandleSaveModelHealth)
+		r.Get("/models/remask", h.HandleGetModelRemaskRules)
+		r.Post("/models/remask", h.HandleSetModelRemaskRule)
+		r.Put("/models/remask", h.HandleSetModelRemaskRule)
+		r.Delete("/models/remask", h.HandleDeleteModelRemaskRule)
+		r.Delete("/models/remask/{alias}", h.HandleDeleteModelRemaskRule)
 
 		// Settings
 		r.Get("/settings", h.HandleGetSettings)
@@ -243,6 +250,12 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 
 		// Compression Analytics
 		r.Get("/analytics/compression", h.HandleGetCompressionAnalytics)
+
+		// Feature 1: Billing & Pricing Engine
+		r.Get("/billing/pricing", h.HandleListModelPricing)
+		r.Post("/billing/pricing", h.HandleSetModelPricing)
+		r.Delete("/billing/pricing/{id}", h.HandleDeleteModelPricing)
+		r.Post("/billing/topup", h.HandleTopupApiKey)
 	})
 	// Operator-supplied dashboard assets (the white-label logo). Registered
 	// here as well as in SetupServerRouter because that table is mounted by

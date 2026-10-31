@@ -288,6 +288,20 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	clientKey := ""
 	if caller := middleware.AuthenticatedApiKeyFromContext(ctx); caller != nil {
 		clientKey = maskAPIKey(caller.Key)
+		// Feature 1: Deduct prepaid saldo/balance if model pricing is configured
+		if caller.ID != "" && caller.ID != "dashboard-session" && caller.ID != "dashboard" {
+			if pricing, err := h.Repo.GetModelPricing(info.Model); err == nil && pricing != nil {
+				inputCost := (float64(usage.PromptTokens) / 1000.0) * pricing.PriceInput1k
+				outputCost := (float64(usage.CompletionTokens) / 1000.0) * pricing.PriceOutput1k
+				totalCharge := inputCost + outputCost
+				if totalCharge > 0 {
+					rem, err := h.Repo.DeductApiKeyBalance(caller.ID, totalCharge)
+					if err == nil {
+						log.Info("billing", "deducted saldo", "apiKeyId", caller.ID, "charge", totalCharge, "remaining", rem, "currency", pricing.Currency)
+					}
+				}
+			}
+		}
 	}
 	if err := h.Repo.InsertUsageHistory(info.Provider, info.Model, info.ConnectionID, maskAPIKey(info.APIKey), info.Endpoint, usage.PromptTokens, usage.CompletionTokens, cost, "success", totalTokens, metaJSON, tokensJSON, clientKey); err != nil {
 		log.Error("usage", "insert failed", "error", err)

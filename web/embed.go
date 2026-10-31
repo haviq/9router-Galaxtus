@@ -68,7 +68,7 @@ func Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		serveFile(w, r, subFS, "index.html")
 	})
 }
@@ -97,7 +97,7 @@ func isFile(subFS fs.FS, name string) bool {
 func applyAssetHeaders(w http.ResponseWriter, name string) {
 	switch {
 	case name == "index.html":
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	case strings.HasPrefix(name, "assets/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	case name == "sw.js":

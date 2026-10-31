@@ -10,10 +10,10 @@ import (
 // Auth cache tuning (F-6). Argon2id at 64 MiB is far too expensive to run on
 // every single request, so verified keys are cached for a short window.
 const (
-	// CacheCapacity bounds the number of cached verifications.
-	CacheCapacity = 256
-	// CacheTTL is how long a verification stays valid.
-	CacheTTL = 5 * time.Second
+	// CacheCapacity bounds the number of cached verifications (sized for massive key concurrency).
+	CacheCapacity = 20000
+	// CacheTTL is how long a verification stays valid in memory.
+	CacheTTL = 60 * time.Second
 )
 
 // entry is one cached verification result.

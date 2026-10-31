@@ -126,7 +126,7 @@ func RenewDeepSeekCredential(ctx context.Context, repo *db.Repo, connectionID st
 // whole thing is written back. Only the data column is written: a full-row
 // update would write back the name, priority and active flag the row had
 // when it was read, which reverts a change the operator just made.
-func deepSeekStoreCredential(ctx context.Context, repo *db.Repo, conn *models.ProviderConnection, result *browserlogin.DeepSeekResult) error {
+func StoreDeepSeekCredential(ctx context.Context, repo *db.Repo, conn *models.ProviderConnection, result *browserlogin.DeepSeekResult) error {
 	raw := map[string]any{}
 	if conn.Data != "" {
 		if err := json.Unmarshal([]byte(conn.Data), &raw); err != nil {
@@ -138,6 +138,8 @@ func deepSeekStoreCredential(ctx context.Context, repo *db.Repo, conn *models.Pr
 	}
 
 	raw["apiKey"] = result.UserToken
+	raw["testStatus"] = "ok"
+	delete(raw, "lastError")
 	providerData, _ := raw["providerSpecificData"].(map[string]any)
 	if providerData == nil {
 		providerData = map[string]any{}
@@ -164,4 +166,8 @@ func deepSeekStoreCredential(ctx context.Context, repo *db.Repo, conn *models.Pr
 		return fmt.Errorf("renew the DeepSeek credential: clear the old model locks: %w", err)
 	}
 	return nil
+}
+
+func deepSeekStoreCredential(ctx context.Context, repo *db.Repo, conn *models.ProviderConnection, result *browserlogin.DeepSeekResult) error {
+	return StoreDeepSeekCredential(ctx, repo, conn, result)
 }

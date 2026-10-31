@@ -24,44 +24,133 @@ func parseJSONString(raw string) string {
 	return raw
 }
 
-// GetModelAlias retrieves the target model string for a given alias.
-// It parses the stored JSON value correctly (removing JSON string quotes if present).
-func (r *Repo) GetModelAlias(alias string) (string, error) {
+// ModelRemaskRule specifies an inbound model alias mapping with anti-detection cloaking and context rules.
+type ModelRemaskRule struct {
+	Alias         string `json:"alias"`
+	Target        string `json:"target"`
+	Enabled       bool   `json:"enabled"`
+	CloakIdentity bool   `json:"cloakIdentity,omitempty"`
+	StripThinking bool   `json:"stripThinking,omitempty"`
+	ContextWindow int    `json:"contextWindow,omitempty"`
+	MaxOutput     int    `json:"maxOutput,omitempty"`
+	CustomPrompt  string `json:"customPrompt,omitempty"`
+	Watermark     string `json:"watermark,omitempty"`
+	WatermarkMode string `json:"watermarkMode,omitempty"` // "append", "prepend", "invisible"
+}
+
+func parseRemaskRule(key, raw string) *ModelRemaskRule {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "{") {
+		var rule ModelRemaskRule
+		if err := json.Unmarshal([]byte(trimmed), &rule); err == nil && rule.Target != "" {
+			if rule.Alias == "" {
+				rule.Alias = key
+			}
+			return &rule
+		}
+	}
+	target := parseJSONString(raw)
+	if target == "" {
+		return nil
+	}
+	return &ModelRemaskRule{
+		Alias:   key,
+		Target:  target,
+		Enabled: true,
+	}
+}
+
+// GetModelRemaskRule retrieves the ModelRemaskRule for a given alias.
+func (r *Repo) GetModelRemaskRule(alias string) (*ModelRemaskRule, error) {
 	var rawVal string
 	err := r.db.QueryRow(
 		"SELECT value FROM kv WHERE scope = 'modelAliases' AND key = ? LIMIT 1",
 		alias,
 	).Scan(&rawVal)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("get model alias %s: %w", alias, err)
+		return nil, fmt.Errorf("get model remask rule %s: %w", alias, err)
 	}
-	return parseJSONString(rawVal), nil
+	return parseRemaskRule(alias, rawVal), nil
 }
 
-// GetModelAliases returns all model aliases as a key-value map.
-func (r *Repo) GetModelAliases() (map[mapKey]string, error) {
+// GetModelRemaskRules returns all configured model remask rules.
+func (r *Repo) GetModelRemaskRules() ([]ModelRemaskRule, error) {
 	rows, err := r.db.Query("SELECT key, value FROM kv WHERE scope = 'modelAliases'")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	aliases := make(map[mapKey]string)
+	var list []ModelRemaskRule
 	for rows.Next() {
 		var key, rawVal string
 		if err := rows.Scan(&key, &rawVal); err != nil {
 			return nil, err
 		}
-		aliases[key] = parseJSONString(rawVal)
+		if rule := parseRemaskRule(key, rawVal); rule != nil {
+			list = append(list, *rule)
+		}
 	}
-
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+	return list, nil
+}
 
+// SetModelRemaskRule persists a model remask rule.
+func (r *Repo) SetModelRemaskRule(rule ModelRemaskRule) error {
+	if rule.Alias == "" {
+		return fmt.Errorf("alias is required")
+	}
+	if rule.Target == "" {
+		return fmt.Errorf("target is required")
+	}
+	b, err := json.Marshal(rule)
+	if err != nil {
+		return fmt.Errorf("marshal rule: %w", err)
+	}
+	_, err = r.db.Exec(`
+		INSERT INTO kv (scope, key, value)
+		VALUES ('modelAliases', ?, ?)
+		ON CONFLICT(scope, key) DO UPDATE SET
+			value = excluded.value
+	`, rule.Alias, string(b))
+	return err
+}
+
+// DeleteModelRemaskRule removes a remask rule by alias.
+func (r *Repo) DeleteModelRemaskRule(alias string) error {
+	_, err := r.db.Exec("DELETE FROM kv WHERE scope = 'modelAliases' AND key = ?", alias)
+	return err
+}
+
+// GetModelAlias retrieves the target model string for a given alias.
+func (r *Repo) GetModelAlias(alias string) (string, error) {
+	rule, err := r.GetModelRemaskRule(alias)
+	if err != nil {
+		return "", err
+	}
+	if rule == nil || !rule.Enabled {
+		return "", nil
+	}
+	return rule.Target, nil
+}
+
+// GetModelAliases returns all model aliases as a key-value map.
+func (r *Repo) GetModelAliases() (map[mapKey]string, error) {
+	rules, err := r.GetModelRemaskRules()
+	if err != nil {
+		return nil, err
+	}
+	aliases := make(map[mapKey]string, len(rules))
+	for _, rule := range rules {
+		if rule.Enabled {
+			aliases[rule.Alias] = rule.Target
+		}
+	}
 	return aliases, nil
 }
 

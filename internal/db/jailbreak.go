@@ -37,6 +37,11 @@ type JailbreakDoc struct {
 	// of them is never injected with this preset, even when a keyword above
 	// matches it. A global exclude list (see GetJailbreakExcludes) overrides
 	Excludes []JailbreakKeyword `json:"excludes,omitempty"`
+	// InjectMode decides how the prompt reaches the outbound body: prepend
+	// ahead of the existing system content (the default), append after it, or
+	// replace it outright. Empty means prepend, so a preset written by an
+	// older build keeps its original behaviour without a migration.
+	InjectMode string `json:"injectMode,omitempty"`
 	// Order is the operator's arrangement position in the preset list. Zero
 	// means "unsorted" and falls back to id order, so a preset written by an
 	// older build (or by import) keeps its place without a migration.
@@ -52,6 +57,35 @@ type JailbreakDoc struct {
 type JailbreakModelConfig struct {
 	Enabled  bool   `json:"enabled"`
 	PresetID string `json:"presetId,omitempty"`
+}
+
+// InjectMode values for JailbreakDoc.InjectMode. The empty string is prepend,
+// so an unset mode is the pre-feature behaviour.
+const (
+	// JailbreakInjectPrepend puts the prompt ahead of the existing system
+	// content, original intact after it. This is the default.
+	JailbreakInjectPrepend = "prepend"
+	// JailbreakInjectAppend puts the prompt after the existing system content,
+	// so an operator instruction can refine rather than lead.
+	JailbreakInjectAppend = "append"
+	// JailbreakInjectReplace drops the existing system content and sends only
+	// the preset prompt, for a hard system override.
+	JailbreakInjectReplace = "replace"
+)
+
+// NormalizeJailbreakInjectMode validates one mode and returns its canonical
+// form. Empty is accepted and means prepend.
+func NormalizeJailbreakInjectMode(mode string) (string, error) {
+	switch mode {
+	case "", JailbreakInjectPrepend:
+		return JailbreakInjectPrepend, nil
+	case JailbreakInjectAppend:
+		return JailbreakInjectAppend, nil
+	case JailbreakInjectReplace:
+		return JailbreakInjectReplace, nil
+	default:
+		return "", fmt.Errorf("unknown inject mode %q (want prepend, append or replace)", mode)
+	}
 }
 
 const (
@@ -160,6 +194,11 @@ func (r *Repo) SaveJailbreakPreset(d *JailbreakDoc) error {
 		return err
 	}
 	d.Keywords = keywords
+	mode, err := NormalizeJailbreakInjectMode(d.InjectMode)
+	if err != nil {
+		return err
+	}
+	d.InjectMode = mode
 	raw, err := json.Marshal(d)
 	if err != nil {
 		return err

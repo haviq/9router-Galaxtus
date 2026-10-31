@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bufio"
 	"context"
 	json "encoding/json/v2"
 	"errors"
@@ -12,10 +13,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/handlerutil"
+	"9router/proxy/internal/proc"
 )
 
 var unixTailscaleCandidates = []string{
@@ -37,7 +40,32 @@ var (
 	tailscaleExec  = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, bin, args...).CombinedOutput()
 	}
+	cloudflaredBinFn = findCloudflaredBin
+	cfTunnelMu       sync.Mutex
+	cfTunnelCmd      *exec.Cmd
+	cfTunnelURL      string
+	cfTunnelRunning  bool
 )
+
+// findCloudflaredBin searches for cloudflared executable across PATH and known install locations.
+func findCloudflaredBin() string {
+	if p, err := exec.LookPath("cloudflared"); err == nil {
+		return p
+	}
+	candidates := []string{
+		`C:\Program Files (x86)\cloudflared\cloudflared.exe`,
+		`C:\Program Files\cloudflared\cloudflared.exe`,
+		"/usr/local/bin/cloudflared",
+		"/usr/bin/cloudflared",
+		"/opt/homebrew/bin/cloudflared",
+	}
+	for _, cand := range candidates {
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return ""
+}
 
 
 // findTailscaleBin searches for the tailscale executable across PATH and well-known locations.
@@ -139,14 +167,26 @@ func (h *DashboardHandler) HandleTunnelStatus(w http.ResponseWriter, r *http.Req
 		tailscaleRunning = true
 	}
 
+	cfTunnelMu.Lock()
+	cfRunning := cfTunnelRunning && cfTunnelURL != ""
+	cfURL := cfTunnelURL
+	cfTunnelMu.Unlock()
+
+	if cfURL == "" {
+		cfURL = tunnelURL
+	}
+	if cfRunning {
+		tunnelEnabled = true
+	}
+
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"tunnel": map[string]any{
 			"enabled":         tunnelEnabled,
 			"settingsEnabled": tunnelEnabled,
-			"tunnelUrl":       tunnelURL,
+			"tunnelUrl":       cfURL,
 			"shortId":         "",
-			"publicUrl":       tunnelURL,
-			"running":         tunnelEnabled && tunnelURL != "",
+			"publicUrl":       cfURL,
+			"running":         cfRunning || (tunnelEnabled && cfURL != ""),
 		},
 		"tailscale": map[string]any{
 			"enabled":         tailscaleEnabled,
@@ -164,13 +204,126 @@ func (h *DashboardHandler) HandleTunnelStatus(w http.ResponseWriter, r *http.Req
 
 // HandleTunnelEnable handles POST /api/tunnel/enable.
 func (h *DashboardHandler) HandleTunnelEnable(w http.ResponseWriter, r *http.Request) {
-	writePlainError(w, http.StatusBadRequest, "Cloudflare Tunnel service is not yet supported in 9router-go. Use an external reverse proxy (e.g. ngrok, cloudflared, or caddy) pointing to http://127.0.0.1:20130")
+	bin := cloudflaredBinFn()
+	if bin == "" {
+		writePlainError(w, http.StatusBadRequest, "Cloudflare Tunnel service requires cloudflared CLI. Install cloudflared or place it in PATH.")
+		return
+	}
+
+	cfTunnelMu.Lock()
+	if cfTunnelRunning && cfTunnelURL != "" {
+		url := cfTunnelURL
+		cfTunnelMu.Unlock()
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"success":   true,
+			"tunnelUrl": url,
+			"publicUrl": url,
+		})
+		return
+	}
+
+	if cfTunnelCmd != nil && cfTunnelCmd.Process != nil {
+		_ = cfTunnelCmd.Process.Kill()
+		cfTunnelCmd = nil
+	}
+	cfTunnelRunning = false
+	cfTunnelURL = ""
+	cfTunnelMu.Unlock()
+
+	port := config.LoadConfig().Port
+	if port <= 0 {
+		port = 20130
+	}
+
+	targetURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	cmd := exec.Command(bin, "tunnel", "--url", targetURL)
+	cmd.SysProcAttr = proc.Detached()
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		writePlainError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to initialize cloudflared pipe: %v", err))
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		writePlainError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to start cloudflared: %v", err))
+		return
+	}
+
+	cfTunnelMu.Lock()
+	cfTunnelCmd = cmd
+	cfTunnelMu.Unlock()
+
+	urlChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+	urlRegex := regexp.MustCompile(`https://[a-zA-Z0-9-]+\.trycloudflare\.com`)
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		found := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !found {
+				if m := urlRegex.FindString(line); m != "" {
+					found = true
+					urlChan <- m
+				}
+			}
+		}
+		if !found {
+			errChan <- errors.New("cloudflared process terminated before providing a tunnel URL")
+		}
+		_ = cmd.Wait()
+
+		cfTunnelMu.Lock()
+		cfTunnelRunning = false
+		cfTunnelURL = ""
+		cfTunnelCmd = nil
+		cfTunnelMu.Unlock()
+
+		_ = h.Repo.UpdateSettingsRaw(map[string]any{
+			"tunnelEnabled": false,
+		})
+	}()
+
+	select {
+	case url := <-urlChan:
+		cfTunnelMu.Lock()
+		cfTunnelRunning = true
+		cfTunnelURL = url
+		cfTunnelMu.Unlock()
+
+		_ = h.Repo.UpdateSettingsRaw(map[string]any{
+			"tunnelEnabled": true,
+			"tunnelUrl":     url,
+		})
+
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"success":   true,
+			"tunnelUrl": url,
+			"publicUrl": url,
+		})
+	case err := <-errChan:
+		writePlainError(w, http.StatusInternalServerError, fmt.Sprintf("cloudflared error: %v", err))
+	case <-time.After(20 * time.Second):
+		writePlainError(w, http.StatusGatewayTimeout, "Timed out waiting for cloudflared tunnel URL")
+	}
 }
 
 // HandleTunnelDisable handles POST /api/tunnel/disable.
 func (h *DashboardHandler) HandleTunnelDisable(w http.ResponseWriter, r *http.Request) {
+	cfTunnelMu.Lock()
+	if cfTunnelCmd != nil && cfTunnelCmd.Process != nil {
+		_ = cfTunnelCmd.Process.Kill()
+		cfTunnelCmd = nil
+	}
+	cfTunnelRunning = false
+	cfTunnelURL = ""
+	cfTunnelMu.Unlock()
+
 	_ = h.Repo.UpdateSettingsRaw(map[string]any{
 		"tunnelEnabled": false,
+		"tunnelUrl":     "",
 	})
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }
