@@ -1,11 +1,64 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/middleware"
 )
+
+// HandleClientTopup processes an automated client self-service top-up.
+func (h *DashboardHandler) HandleClientTopup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req struct {
+		ApiKeyID string  `json:"apiKeyId"`
+		Balance  float64 `json:"balance"`
+		Amount   float64 `json:"amount"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	apiKeyStr := middleware.ExtractApiKey(r)
+	keyIdentifier := req.ApiKeyID
+	if keyIdentifier == "" {
+		keyIdentifier = apiKeyStr
+	}
+
+	if keyIdentifier == "" {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "apiKeyId or Bearer auth is required")
+		return
+	}
+
+	newBalance := req.Balance
+	if newBalance <= 0 && req.Amount > 0 {
+		keyObj, err := h.Repo.GetApiKeyByKey(keyIdentifier)
+		if err == nil && keyObj != nil && keyObj.Balance != nil && *keyObj.Balance > 0 {
+			newBalance = *keyObj.Balance + req.Amount
+		} else {
+			newBalance = req.Amount
+		}
+	}
+
+	if err := h.Repo.SetApiKeyBalance(keyIdentifier, newBalance); err != nil {
+		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"balance": newBalance,
+	})
+}
 
 // HandleGetClientPortalInfo returns client self-service metadata authenticated by the client's Bearer API key.
 func (h *DashboardHandler) HandleGetClientPortalInfo(w http.ResponseWriter, r *http.Request) {

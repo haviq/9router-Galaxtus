@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, type SystemVersionInfo } from '../api/client'
+  import gsap from 'gsap'
   import { copyToClipboard } from '../lib/clipboard'
   import { TAB_ROUTES, type ActiveTab } from '../lib/router'
   import { isNavLinkActive, orderedNavGroups } from '../lib/nav'
@@ -34,10 +35,8 @@
     brandName?: string
     brandLogo?: string
   } = $props()
-  // The white-label branding card in Settings writes these two; an empty value
-  // falls back to the project's own name and favicon, so an operator who never
-  // opens that card sees exactly what the sidebar showed before.
-  const displayBrandName = $derived(brandName || '9router-go')
+
+  const displayBrandName = $derived(brandName || '9router Galactus')
   const displayBrandLogo = $derived(brandLogo || '/favicon.svg')
   const INSTALL_CMD = '9router-go update'
   let copied = $state(false)
@@ -83,22 +82,150 @@
     }, 2000)
   }
 
+  // Persistent GPU-accelerated liquid sliding pill + trailing droplet
+  let navEl: HTMLElement | undefined = $state()
+  let pillEl: HTMLDivElement | undefined = $state()
+  let trailEl: HTMLDivElement | undefined = $state()
+  let pillInitialized = false
+  let lastTargetEl: HTMLElement | null = null
+
+  function animateLiquidPillTo(targetItem: HTMLElement, animateFlow = true) {
+    if (!navEl || !pillEl || !trailEl) return
+
+    const navRect = navEl.getBoundingClientRect()
+    const itemRect = targetItem.getBoundingClientRect()
+    const x = itemRect.left - navRect.left
+    const y = itemRect.top - navRect.top + navEl.scrollTop
+    const width = itemRect.width
+    const height = itemRect.height
+
+    if (!pillInitialized || !animateFlow) {
+      pillInitialized = true
+      lastTargetEl = targetItem
+      gsap.set([pillEl, trailEl], {
+        x,
+        y,
+        width,
+        height,
+        scaleX: 1,
+        scaleY: 1,
+        force3D: true,
+      })
+      gsap.set(pillEl, { opacity: 1 })
+      gsap.set(trailEl, { opacity: 0 })
+      return
+    }
+
+    const currentY = Number(gsap.getProperty(pillEl, 'y')) || y
+    const currentX = Number(gsap.getProperty(pillEl, 'x')) || x
+    const dy = y - currentY
+    const absDy = Math.abs(dy)
+
+    lastTargetEl = targetItem
+    gsap.killTweensOf([pillEl, trailEl])
+
+    // 1. Lead capsule glides with pure GPU translate3d + smooth bell-curve liquid stretch
+    const stretchY = Math.min(1.26, 1 + absDy / 260)
+    const squeezeX = Math.max(0.95, 1 - absDy / 1400)
+
+    gsap.to(pillEl, {
+      x,
+      y,
+      width,
+      height,
+      opacity: 1,
+      duration: 0.44,
+      ease: 'expo.out',
+      force3D: true,
+    })
+
+    if (absDy > 4) {
+      gsap.to(pillEl, {
+        keyframes: [
+          { scaleY: stretchY, scaleX: squeezeX, duration: 0.13, ease: 'sine.out' },
+          { scaleY: 1, scaleX: 1, duration: 0.35, ease: 'elastic.out(1, 0.72)' },
+        ],
+        force3D: true,
+      })
+
+      // 2. Coupled liquid trailing stream that stretches across the gap and pours into the target
+      const midY = currentY + dy * 0.35
+      const trailStretch = Math.min(1.65, 1 + absDy / 140)
+      gsap.set(trailEl, {
+        x: currentX,
+        y: currentY,
+        width,
+        height,
+        scaleY: 1,
+        scaleX: 0.96,
+        opacity: 0.75,
+        force3D: true,
+      })
+      gsap.to(trailEl, {
+        keyframes: [
+          {
+            y: midY,
+            scaleY: trailStretch,
+            scaleX: 0.92,
+            opacity: 0.65,
+            duration: 0.14,
+            ease: 'power2.out',
+          },
+          {
+            x,
+            y,
+            scaleY: 1,
+            scaleX: 1,
+            opacity: 0,
+            duration: 0.36,
+            ease: 'expo.out',
+          },
+        ],
+        force3D: true,
+      })
+    }
+  }
+
+  function syncNavPill(animateFlow = true) {
+    if (!navEl || !pillEl) return
+    const activeItem = navEl.querySelector<HTMLElement>('[data-nav-active="true"]')
+    if (!activeItem) {
+      gsap.set(pillEl, { opacity: 0 })
+      if (trailEl) gsap.set(trailEl, { opacity: 0 })
+      return
+    }
+    if (activeItem === lastTargetEl && pillInitialized) return
+    animateLiquidPillTo(activeItem, animateFlow)
+  }
+
   function handleNav(tab: ActiveTab, e?: MouseEvent) {
     if (e) {
       if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || (e.button !== undefined && e.button !== 0)) return
       e.preventDefault()
+      const clickedEl = e.currentTarget as HTMLElement | null
+      if (clickedEl && navEl?.contains(clickedEl)) {
+        // Start GPU liquid flow BEFORE mounting the new route view so frame 0 is 120fps butter-smooth
+        animateLiquidPillTo(clickedEl, true)
+      }
     }
-    navigate(tab)
-    onClose?.()
+    requestAnimationFrame(() => {
+      navigate(tab)
+      onClose?.()
+    })
   }
 
-  // The sidebar and the Settings > Sidebar switch read the same entry list
-  // (web/src/lib/nav.ts), so a hidden entry is hidden in both.
   const navGroups = $derived(orderedNavGroups(hiddenNav, navOrder))
+
+  $effect(() => {
+    void activeTab
+    void isMediaOpen
+    void navGroups
+    requestAnimationFrame(() => syncNavPill(true))
+  })
 </script>
 
 <aside
-  class="flex h-full max-h-screen w-72 flex-col overflow-hidden border-r border-border-subtle bg-sidebar backdrop-blur-xl transition-colors duration-300 flex-shrink-0 select-none z-30"
+  class="ios-sidebar flex h-full max-h-screen w-72 flex-col overflow-hidden border-r border-border-subtle bg-sidebar backdrop-blur-xl transition-colors duration-300 flex-shrink-0 select-none z-30"
 >
   <!-- Window control / traffic lights -->
   <div class="flex items-center gap-2 px-6 pt-5 pb-2 shrink-0">
@@ -107,7 +234,7 @@
     <div class="w-3 h-3 rounded-full bg-[#27C93F]"></div>
   </div>
 
-  <!-- Brand header: 9router-go with official favicon.svg logo -->
+  <!-- Brand header: 9router Galactus with official favicon.svg logo -->
   <div class="px-6 py-4 flex flex-col gap-2 shrink-0">
     <a
       href={TAB_ROUTES.endpoint}
@@ -115,7 +242,7 @@
       class="flex items-center gap-3 cursor-pointer group"
     >
       <div
-        class="flex items-center justify-center size-9 rounded-[10px] bg-surface-2 border border-border-subtle shadow-[var(--shadow-warm)] flex-shrink-0 group-hover:scale-105 transition-transform overflow-hidden p-1.5"
+        class="ios-squircle-icon flex items-center justify-center size-10 rounded-[13px] bg-surface-2 border border-border-subtle shadow-[var(--shadow-warm)] flex-shrink-0 group-hover:scale-105 transition-transform overflow-hidden p-1.5"
       >
         <img
           src={displayBrandLogo}
@@ -166,7 +293,13 @@
   </div>
 
   <!-- Navigation -->
-  <nav class="flex-1 min-h-0 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
+  <nav
+    bind:this={navEl}
+    data-no-bridge
+    class="relative flex-1 min-h-0 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar"
+  >
+    <div bind:this={trailEl} class="sidebar-flow-trail pointer-events-none" aria-hidden="true"></div>
+    <div bind:this={pillEl} class="sidebar-flow-pill pointer-events-none" aria-hidden="true"></div>
     {#each navGroups as group (group.id)}
       <div class="{group.label ? 'pt-3 mt-2' : ''} space-y-0.5">
         {#if group.label}
@@ -180,11 +313,11 @@
             <button
               type="button"
               onclick={() => (isMediaOpen = !isMediaOpen)}
-              class="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg transition-all group cursor-pointer {activeTab.startsWith(
+              class="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg transition-colors group cursor-pointer {activeTab.startsWith(
                 'media-'
               )
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
+                ? 'text-primary font-semibold'
+                : 'text-text-muted hover:bg-surface-2/60 hover:text-text-main'}"
             >
               <span class="material-symbols-outlined text-[18px]">{entry.icon}</span>
               <span class="text-[13px] flex-1 text-left">{entry.label}</span>
@@ -203,9 +336,10 @@
                   <a
                     href={TAB_ROUTES[child.id]}
                     onclick={(e) => handleNav(child.id, e)}
-                    class="flex items-center gap-3 px-3 py-1.5 rounded-lg transition-all group cursor-pointer {childActive
-                      ? 'bg-primary/10 text-primary font-medium'
-                      : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
+                    data-nav-active={childActive ? 'true' : 'false'}
+                    class="relative z-10 flex items-center gap-3 px-3 py-1.5 rounded-[13px] transition-colors duration-200 group cursor-pointer {childActive
+                      ? 'text-primary font-semibold'
+                      : 'text-text-muted hover:bg-surface-2/50 hover:text-text-main'}"
                   >
                     <span
                       class="material-symbols-outlined text-[16px] {childActive
@@ -224,9 +358,10 @@
             <a
               href={TAB_ROUTES[entry.id]}
               onclick={(e) => handleNav(entry.id, e)}
-              class="flex items-center gap-3 px-3 py-1.5 rounded-lg transition-all group cursor-pointer {active
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
+              data-nav-active={active ? 'true' : 'false'}
+              class="ios-nav-item relative z-10 flex items-center gap-3 px-3.5 py-2 rounded-[13px] transition-colors duration-200 group cursor-pointer {active
+                ? 'text-primary font-semibold'
+                : 'text-text-muted hover:bg-surface-2/50 hover:text-text-main'}"
             >
               <span
                 class="material-symbols-outlined text-[18px] {active
@@ -258,4 +393,3 @@
     </div>
   </div>
 </aside>
-

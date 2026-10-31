@@ -76,7 +76,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { kind: 'link', id: 'connections', label: 'Providers', icon: 'dns' },
       { kind: 'link', id: 'combos', label: 'Combo & Vision Adapter', icon: 'layers' },
       { kind: 'link', id: 'remask', label: 'Model Remask', icon: 'theater_comedy' },
-      { kind: 'link', id: 'portal', label: 'Client Portal', icon: 'storefront' },
+      { kind: 'link', id: 'portal', label: 'Enterprise Console', icon: 'verified_user' },
       { kind: 'link', id: 'playground', label: 'Playground', icon: 'smart_toy' },
       { kind: 'link', id: 'analytics', label: 'Usage', icon: 'bar_chart' },
       { kind: 'link', id: 'quota', label: 'Quota Tracker', icon: 'data_usage' },

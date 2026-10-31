@@ -37,7 +37,7 @@
 
 <div
   {id}
-  class="bg-surface border border-border-subtle rounded-[14px] {elev
+  class="bg-surface border border-border-subtle rounded-[24px] {elev
     ? 'shadow-[var(--shadow-elev)]'
     : 'shadow-[var(--shadow-soft)]'} {hover
     ? 'hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer'

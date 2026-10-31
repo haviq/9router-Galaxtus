@@ -188,7 +188,7 @@
         <div class="size-14 rounded-2xl bg-surface border border-border-subtle shadow-[var(--shadow-warm)] flex items-center justify-center p-2.5 mb-4">
           <img src="/favicon.svg" alt="9router-go" class="w-full h-full object-contain" />
         </div>
-        <h1 class="text-3xl font-bold text-primary mb-2">9router-go</h1>
+        <h1 class="text-3xl font-bold text-primary mb-2">9router Galactus</h1>
         <p class="text-text-muted">
           {#if samlAvailable}
             Sign in with SAML 2.0 Single Sign-On

@@ -552,6 +552,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Get("/", webH.ServeHTTP)
 	r.Get("/login", webH.ServeHTTP)
 	r.Get("/portal", webH.ServeHTTP)
+	r.Get("/console", webH.ServeHTTP)
+	r.Get("/workbench", webH.ServeHTTP)
+	r.Get("/workspace", webH.ServeHTTP)
+	r.Get("/studio", webH.ServeHTTP)
+	r.Get("/trust", webH.ServeHTTP)
 	// Dashboard pages require the login session when requireLogin is on; the
 	// guard redirects browsers to /login (upstream dashboardGuard).
 	r.Group(func(r chi.Router) {
@@ -709,6 +714,8 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// Client self-service portal telemetry (authenticated via client's own Bearer API key)
 	portalDashH := dashboard.NewDashboardHandler(repo, ts)
 	r.Get("/api/client/portal-info", portalDashH.HandleGetClientPortalInfo)
+	r.Post("/api/client/topup", portalDashH.HandleClientTopup)
+	r.Options("/api/client/topup", portalDashH.HandleClientTopup)
 	r.Options("/api/client/portal-info", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")

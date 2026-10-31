@@ -283,6 +283,16 @@
     {/if}
   </div>
 
+  <!-- Center: iOS Dynamic Island Status Capsule (No fake equalizer slop) -->
+  <div class="hidden md:flex items-center justify-center shrink-0">
+    <div class="ios-dynamic-island">
+      <span class="ios-island-dot"></span>
+      <span class="text-[11px] font-semibold tracking-tight text-white/95">Galactus Core</span>
+      <span class="text-white/25">•</span>
+      <span class="font-mono text-[11px] text-white/75">{displayTitle}</span>
+    </div>
+  </div>
+
   <!-- Right: one menu. Donate, install, theme, changelog and logout were five
        controls competing for the same strip, and on a phone they wrapped into
        two rows (issue #224). They now live behind a single trigger, which is

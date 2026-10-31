@@ -5,6 +5,24 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/gsap')) {
+            return 'vendor-gsap'
+          }
+          if (id.includes('node_modules/lucide-svelte')) {
+            return 'vendor-icons'
+          }
+          if (id.includes('node_modules/marked')) {
+            return 'vendor-marked'
+          }
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:20130',

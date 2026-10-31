@@ -65,7 +65,7 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   'http-rewrite': '/dashboard/http-rewrite',
   keys: '/dashboard/keys',
   remask: '/dashboard/remask',
-  portal: '/portal',
+  portal: '/console',
 }
 
 const ROUTE_TO_TAB: Record<string, ActiveTab> = {
@@ -79,6 +79,11 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
 
   // portal
   '/portal': 'portal',
+  '/console': 'portal',
+  '/workbench': 'portal',
+  '/workspace': 'portal',
+  '/studio': 'portal',
+  '/trust': 'portal',
 
   // remask / model remasking
   '/dashboard/remask': 'remask',
@@ -243,7 +248,7 @@ export function pathToTab(pathname: string): ActiveTab {
   if (ROUTE_TO_TAB[normalized]) {
     return ROUTE_TO_TAB[normalized]
   }
-  if (normalized.includes('portal')) return 'portal'
+  if (normalized.includes('portal') || normalized === '/console' || normalized.includes('workbench') || normalized.includes('workspace') || normalized.includes('studio') || normalized.includes('trust')) return 'portal'
   if (normalized.includes('login')) return 'login'
   if (normalized.includes('endpoint')) return 'endpoint'
   if (normalized.includes('embedding')) return 'media-embedding'

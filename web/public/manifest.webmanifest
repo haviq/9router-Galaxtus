@@ -1,6 +1,6 @@
 {
-  "name": "9router-go - High-Throughput AI Gateway",
-  "short_name": "9router-go",
+  "name": "9router Galactus - High-Throughput AI Gateway",
+  "short_name": "9router Galactus",
   "description": "High-throughput AI gateway & infrastructure router in Go",
   "start_url": "/",
   "scope": "/",

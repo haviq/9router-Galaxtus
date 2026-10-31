@@ -84,15 +84,15 @@
 /* Dark theme */
 .dark {
   color-scheme: dark;
-  --app-bg: #1a1a1a;
-  --app-bg-alt: #1f1f1e;
-  --app-surface: #262626;
-  --app-surface-2: #303030;
-  --app-surface-3: #3a3a3a;
-  --app-sidebar: rgba(30, 30, 30, 0.85);
-  --app-border: #333333;
-  --app-border-subtle: #2a2a2a;
-  --app-text-main: #ededed;
+  --app-bg: #0b0c10;
+  --app-bg-alt: #101217;
+  --app-surface: #15171e;
+  --app-surface-2: #1c1f28;
+  --app-surface-3: #252936;
+  --app-sidebar: rgba(14, 16, 21, 0.92);
+  --app-border: #262936;
+  --app-border-subtle: #1e212b;
+  --app-text-main: #f3f4f6;
   --app-text-muted: #9ca3af;
   --app-text-subtle: #6b7280;
 }
@@ -894,4 +894,257 @@ body {
   animation: none !important;
   transform: none !important;
   opacity: 1 !important;
+}
+
+
+/* ==========================================================================
+ * 9ROUTER GALACTUS — ZERO-SLOP iOS SMOKED GLASS & LIQUID FLOW DESIGN SYSTEM
+ * Strictly zero multi-color gradients, zero purple neon halos, pure smoked
+ * obsidian glass (`backdrop-filter: blur(28px)`), 1px physical specular
+ * rims, and liquid-spring connected pill transitions (`layoutId`-style).
+ * ========================================================================== */
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius-brand: 13px;
+  --radius-brand-lg: 22px;
+}
+
+.dark,
+:root.dark,
+html.dark {
+  --app-bg: #04050a;
+  --app-bg-alt: rgba(11, 13, 20, 0.78);
+  --app-surface: rgba(14, 16, 24, 0.72);
+  --app-surface-2: rgba(22, 25, 36, 0.78);
+  --app-surface-3: rgba(32, 36, 50, 0.85);
+  --app-sidebar: rgba(9, 11, 17, 0.76);
+  --app-border: rgba(255, 255, 255, 0.09);
+  --app-border-subtle: rgba(255, 255, 255, 0.065);
+  --app-text-main: #f4f5f8;
+  --app-text-muted: #8e95a8;
+  --app-text-subtle: #636a7d;
+}
+
+/* iOS Smoked Glass Sidebar & Header — Solid translucent, zero gradient slop */
+aside {
+  background-color: rgba(9, 11, 17, 0.76) !important;
+  background-image: none !important;
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    12px 0 36px -12px rgba(0, 0, 0, 0.75);
+}
+
+header {
+  background-color: rgba(9, 11, 17, 0.72) !important;
+  background-image: none !important;
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 28px -12px rgba(0, 0, 0, 0.65);
+}
+
+/* Persistent Liquid Sliding Pill in Sidebar Navigation */
+.sidebar-flow-trail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-radius: 13px;
+  background-color: rgba(229, 106, 74, 0.11);
+  border: 1px solid rgba(229, 106, 74, 0.22);
+  z-index: 1;
+  transform-origin: center center;
+  will-change: transform, width, height, opacity;
+}
+.sidebar-flow-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-radius: 13px;
+  background-color: rgba(229, 106, 74, 0.14);
+  border: 1px solid rgba(229, 106, 74, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 14px -4px rgba(0, 0, 0, 0.45);
+  z-index: 1;
+  transform-origin: center center;
+  will-change: transform, width, height, opacity;
+}
+
+/* iOS Dynamic Island Status Capsule — Solid matte obsidian, zero neon glow */
+.ios-dynamic-island {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  background-color: rgba(5, 6, 11, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 6px 18px -4px rgba(0, 0, 0, 0.75);
+  transition:
+    transform 0.32s var(--ease-out-expo),
+    padding 0.32s var(--ease-out-expo),
+    border-color 0.32s var(--ease-out-expo);
+  cursor: default;
+}
+.ios-dynamic-island:hover {
+  transform: scale(1.025);
+  padding: 0 17px;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ios-island-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #10b981;
+}
+
+/* iOS Squircle App Icon — Solid smoked surface, zero gradient */
+.ios-squircle-icon {
+  border-radius: 13px !important;
+  background-color: rgba(22, 25, 36, 0.92) !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 12px -2px rgba(0, 0, 0, 0.5) !important;
+}
+
+.ios-nav-active {
+  background-color: rgba(229, 106, 74, 0.14) !important;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(229, 106, 74, 0.32);
+}
+
+/* iOS Smoked Crystal Glass Cards (.bg-surface) — Pure translucent, zero color gradient */
+.dark .bg-surface,
+:root:not(.dark) .bg-surface {
+  border-radius: 22px;
+  background-color: rgba(13, 15, 23, 0.72);
+  background-image: none;
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    0 14px 36px -10px rgba(0, 0, 0, 0.72);
+  transition:
+    box-shadow 0.28s var(--ease-out-expo),
+    border-color 0.28s var(--ease-out-expo),
+    background-color 0.28s var(--ease-out-expo);
+}
+
+.dark .bg-surface:hover,
+:root:not(.dark) .bg-surface:hover {
+  background-color: rgba(16, 19, 28, 0.78);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.20),
+    0 18px 44px -10px rgba(0, 0, 0, 0.82);
+}
+
+/* Inner iOS Capsules, Segmented Wells & Token Boxes (.bg-surface-2) */
+.dark .bg-surface-2,
+:root:not(.dark) .bg-surface-2 {
+  border-radius: 13px;
+  background-color: rgba(22, 25, 36, 0.78);
+  background-image: none;
+  border-color: rgba(255, 255, 255, 0.085);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Primary action buttons: Solid Terracotta + 1px Specular Bevel (No Gradient!) */
+button {
+  transition:
+    background-color 0.22s var(--ease-out-expo),
+    border-color 0.22s var(--ease-out-expo),
+    color 0.22s var(--ease-out-expo),
+    box-shadow 0.22s var(--ease-out-expo),
+    transform 0.18s var(--ease-out-expo);
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.bg-primary,
+.bg-brand-500,
+.bg-brand-600 {
+  border-radius: 13px;
+  background-image: none !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 8px -2px rgba(0, 0, 0, 0.45);
+}
+.bg-primary:hover,
+.bg-brand-500:hover,
+.bg-brand-600:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 4px 14px -2px rgba(0, 0, 0, 0.55);
+}
+
+/* Inputs: iOS Spotlight Search Bar Style */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea {
+  border-radius: 13px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition:
+    box-shadow 0.2s var(--ease-out-expo),
+    border-color 0.2s var(--ease-out-expo),
+    background-color 0.2s var(--ease-out-expo);
+}
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: rgba(229, 106, 74, 0.65);
+  box-shadow:
+    0 0 0 3px rgba(229, 106, 74, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Table rows: Crisp neutral hover */
+tbody tr {
+  transition: background-color 0.18s var(--ease-out-expo);
+}
+tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.035);
+}
+
+/* Global smoothness */
+html {
+  scroll-behavior: smooth;
+}
+a,
+button,
+[role="button"] {
+  transition-timing-function: var(--ease-out-expo);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }

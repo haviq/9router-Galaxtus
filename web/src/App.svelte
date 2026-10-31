@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Loader2 } from 'lucide-svelte'
+  import { pageEnter } from './lib/motion'
   import {
     api,
     getStoredAPIKey,
@@ -41,6 +42,7 @@
   import PlaygroundView from './components/PlaygroundView.svelte'
   import ModelRemaskView from './components/remask/ModelRemaskView.svelte'
   import ClientPortalView from './components/portal/ClientPortalView.svelte'
+  import GalaxyBackground from './components/GalaxyBackground.svelte'
   import TopBar from './components/TopBar.svelte'
   import { parseMediaProvider, parseProviderId, pathToTab, providerPath, mediaProviderPath, TAB_ROUTES, type ActiveTab, type MediaProviderRoute } from './lib/router'
   import { PROVIDER_CATALOG } from './lib/providers'
@@ -204,7 +206,7 @@
 
     checkAuth().then(() => {
       if (requireLogin && !isAuthenticatedState) {
-        if (activeTab !== 'login') {
+        if (activeTab !== 'login' && activeTab !== 'portal') {
           navigate('login', true)
         }
       } else {
@@ -339,7 +341,8 @@
     }}
   />
 {:else}
-  <div class="flex h-screen w-full overflow-hidden bg-bg text-text-main font-body transition-colors duration-300">
+  <div class="flex h-screen w-full overflow-hidden bg-transparent text-text-main font-body transition-colors duration-300 relative isolate">
+    <GalaxyBackground />
     <Toasts />
     <!-- Mobile sidebar drawer backdrop -->
     {#if isMobileMenuOpen}
@@ -393,7 +396,7 @@
     <!-- Main Viewport (TopBar + Scrollable Canvas) -->
     <div class="flex-1 flex flex-col min-w-0 h-full relative isolate">
       <!-- Faint grid background (upstream landing-grid) -->
-      <div class="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true"></div>
+      <!-- Galaxy cosmic background replaces old grid -->
 
       <TopBar
         {activeTab}
@@ -409,11 +412,12 @@
       />
 
       <main class="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
-        <div class="max-w-7xl mx-auto">
+        {#key activeTab + (selectedProviderId ?? '')}
+        <div class="max-w-7xl mx-auto" use:pageEnter>
           {#if isLoading}
             <div class="flex flex-col items-center justify-center h-[70vh] gap-3 text-text-muted">
               <Loader2 class="w-7 h-7 animate-spin text-brand-500" />
-              <span class="font-code text-xs">Connecting to 9router-go Localhost Gateway (:20130)...</span>
+              <span class="font-code text-xs">Connecting to 9router Galactus Gateway (:20130)...</span>
             </div>
           {:else}
             {#if activeTab === 'endpoint'}
@@ -638,6 +642,7 @@
             {/if}
           {/if}
         </div>
+        {/key}
       </main>
     </div>
   </div>

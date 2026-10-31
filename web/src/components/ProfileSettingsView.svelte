@@ -1505,11 +1505,11 @@
         <h2 class="text-sm font-bold text-text-main">White-label branding</h2>
       </div>
       <p class="text-xs text-text-muted">
-        Customize the name and logo shown in the dashboard sidebar. Leave blank to use the 9router-go defaults.
+        Customize the name and logo shown in the dashboard sidebar. Leave blank to use the 9router Galactus defaults.
       </p>
       <label class="block space-y-1">
         <span class="text-xs font-medium text-text-main">Application name</span>
-        <Input bind:value={appName} placeholder="9router-go" />
+        <Input bind:value={appName} placeholder="9router Galactus" />
       </label>
       <label class="block space-y-1">
         <span class="text-xs font-medium text-text-main">Logo URL</span>

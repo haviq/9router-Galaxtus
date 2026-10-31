@@ -8,7 +8,10 @@ import App from './App.svelte'
 import './index.css'
 import { registerServiceWorker } from './lib/pwa'
 
+import { initGlossyMotion } from './lib/motion'
+
 registerServiceWorker()
+initGlossyMotion()
 
 const app = mount(App, {
   target: document.getElementById('app')!,
