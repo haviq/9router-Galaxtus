@@ -227,22 +227,15 @@
 <aside
   class="ios-sidebar flex h-full max-h-screen w-72 flex-col overflow-hidden border-r border-border-subtle bg-sidebar backdrop-blur-xl transition-colors duration-300 flex-shrink-0 select-none z-30"
 >
-  <!-- Window control / traffic lights -->
-  <div class="flex items-center gap-2 px-6 pt-5 pb-2 shrink-0">
-    <div class="w-3 h-3 rounded-full bg-[#FF5F56]"></div>
-    <div class="w-3 h-3 rounded-full bg-[#FFBD2E]"></div>
-    <div class="w-3 h-3 rounded-full bg-[#27C93F]"></div>
-  </div>
-
-  <!-- Brand header: 9router Galactus with official favicon.svg logo -->
-  <div class="px-6 py-4 flex flex-col gap-2 shrink-0">
+  <!-- Brand header: 9router Galactus with Galaxy logo -->
+  <div class="px-6 pt-6 pb-4 flex flex-col gap-2 shrink-0">
     <a
       href={TAB_ROUTES.endpoint}
       onclick={(e) => handleNav('endpoint', e)}
       class="flex items-center gap-3 cursor-pointer group"
     >
       <div
-        class="ios-squircle-icon flex items-center justify-center size-10 rounded-[13px] bg-surface-2 border border-border-subtle shadow-[var(--shadow-warm)] flex-shrink-0 group-hover:scale-105 transition-transform overflow-hidden p-1.5"
+        class="ios-squircle-icon flex items-center justify-center size-10 rounded-[13px] bg-surface-2 border border-border-subtle shadow-[var(--shadow-warm)] flex-shrink-0 group-hover:scale-105 transition-transform overflow-hidden p-0.5"
       >
         <img
           src={displayBrandLogo}
