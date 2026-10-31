@@ -15,6 +15,7 @@ import (
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/middleware"
 	"9router/proxy/internal/observ"
+	"9router/proxy/internal/pro"
 	"9router/proxy/web"
 	json "encoding/json/v2"
 	"github.com/go-chi/chi/v5"
@@ -75,6 +76,9 @@ func SetupRoutes(r interface {
 	r.Get("/api/models", chatH.HandleModels)
 	r.Post("/chat/completions", chatH.HandleChatCompletions)
 	r.Post("/v1/chat/completions", chatH.HandleChatCompletions)
+	proG := pro.NewGateway("", "")
+	r.Post("/pro/chat/completions", proG.ServeHTTP)
+	r.Post("/pro/v1/chat/completions", proG.ServeHTTP)
 	r.Post("/messages", chatH.HandleMessages)
 	r.Post("/messages/count_tokens", chatH.HandleCountTokens)
 	r.Post("/api/chat", chatH.HandleOllamaChat)
@@ -189,6 +193,8 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 		r.Get("/api/v1/models", chatH.HandleModels)
 		r.Post("/api/chat/completions", chatH.HandleChatCompletions)
 		r.Post("/api/v1/chat/completions", chatH.HandleChatCompletions)
+		proG := pro.NewGateway("", "")
+		r.Post("/api/pro/v1/chat/completions", proG.ServeHTTP)
 	}
 	ssoH := sso.NewHandler(repo)
 

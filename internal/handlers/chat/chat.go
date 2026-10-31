@@ -6,6 +6,7 @@ import (
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/log"
 	"9router/proxy/internal/middleware"
+	"9router/proxy/internal/pro"
 	"9router/proxy/internal/providers"
 	"9router/proxy/internal/rewrite"
 	"9router/proxy/internal/semanticcache"
@@ -53,6 +54,10 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer r.Body.Close()
+
+	if !pro.InboundCheck(w, body) {
+		return
+	}
 
 	if !rewrite.IsRewritten(r.Context()) && rewrite.ShouldRewrite(r.URL.Path, r.RequestURI) {
 		cfg := rewrite.LoadConfig(h.Repo)
@@ -301,6 +306,10 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
+	if !pro.InboundCheck(w, body) {
+		return
+	}
 
 	var reqBody struct {
 		Model  string `json:"model"`
@@ -994,6 +1003,7 @@ func (h *ChatHandler) HandleCountTokens(w http.ResponseWriter, r *http.Request) 
 	}
 	defer r.Body.Close()
 
+
 	inputTokens := estimateAnthropicTokens(body)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"input_tokens": inputTokens,
@@ -1150,6 +1160,10 @@ func (h *ChatHandler) HandleResponsesCompact(w http.ResponseWriter, r *http.Requ
 	}
 	defer r.Body.Close()
 
+	if !pro.InboundCheck(w, body) {
+		return
+	}
+
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON body")
@@ -1177,6 +1191,10 @@ func (h *ChatHandler) HandleOllamaChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
+	if !pro.InboundCheck(w, body) {
+		return
+	}
 
 	// Ollama request format is close to OpenAI — forward to chat completions.
 	newReq, _ := http.NewRequestWithContext(r.Context(), "POST", "/v1/chat/completions", bytes.NewReader(body))
