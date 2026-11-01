@@ -710,15 +710,7 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 		// arrives as. Omitting it lets the upstream pick its own default,
 		// which is what adaptive means.
 		if v, ok := reqMap["reasoning_effort"].(string); ok && (v == "auto" || v == "") {
-			if isOpenCodeReasoningModel(cleanModel) {
-				reqMap["reasoning_effort"] = "low"
-			} else {
-				delete(reqMap, "reasoning_effort")
-			}
-		} else if _, ok := reqMap["reasoning_effort"]; !ok {
-			if isOpenCodeReasoningModel(cleanModel) {
-				reqMap["reasoning_effort"] = "low"
-			}
+			delete(reqMap, "reasoning_effort")
 		}
 		// Deterministic marshaling keeps the serialized request prefix
 		// stable across turns, which DeepSeek's prefix prompt cache

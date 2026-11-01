@@ -18,11 +18,13 @@ import "9router/proxy/internal/proxy"
 // Keyed lanes keep their previous per-request behavior: their quota is
 // accounted per key, not per session.
 func opencodeSessionHint(req *Request, free bool) string {
-	if !free || req.SessionID != "" {
+	if !free {
 		return req.SessionID
 	}
 	key := "opencode:default"
-	if req.ConnectionID != "" {
+	if req.SessionID != "" {
+		key = "opencode:session:" + req.SessionID
+	} else if req.ConnectionID != "" {
 		key = "opencode:conn:" + req.ConnectionID
 	}
 	return proxy.StableOpenCodeSessionID(key)
@@ -34,8 +36,11 @@ func opencodeSessionHint(req *Request, free bool) string {
 // spent. The free flag must be the same one passed to opencodeSessionHint: a
 // keyed lane's quota is accounted per key, so its session is never rotated.
 func opencodeStableSessionKey(req *Request, free bool) string {
-	if !free || req.SessionID != "" {
+	if !free {
 		return ""
+	}
+	if req.SessionID != "" {
+		return "opencode:session:" + req.SessionID
 	}
 	if req.ConnectionID != "" {
 		return "opencode:conn:" + req.ConnectionID

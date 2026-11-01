@@ -109,8 +109,8 @@ func TestOpencodeStableSessionKey(t *testing.T) {
 		t.Errorf("free lane without a client session: got key %q", got)
 	}
 	withSession := &Request{ConnectionID: "conn-1", SessionID: "ses_client"}
-	if got := opencodeStableSessionKey(withSession, true); got != "" {
-		t.Errorf("a client session must never be rotated, got key %q", got)
+	if got := opencodeStableSessionKey(withSession, true); got != "opencode:session:ses_client" {
+		t.Errorf("expected client session mapped to stable key, got %q", got)
 	}
 	keyed := &Request{ConnectionID: "conn-1"}
 	if got := opencodeStableSessionKey(keyed, false); got != "" {
@@ -208,5 +208,32 @@ func TestForwardOpenCode_ResponsePositionRefusalReplaysDirect(t *testing.T) {
 	resp.Body.Close()
 	if attempts != 1 || resp.StatusCode != http.StatusOK {
 		t.Errorf("expected one refusal attempt plus a direct replay, got attempts=%d status=%d", attempts, resp.StatusCode)
+	}
+}
+
+func TestForwardOpenCodeRotating_ClientSessionRotates(t *testing.T) {
+	req := &Request{SessionID: "cursor-client-sess-123"}
+	key := opencodeStableSessionKey(req, true)
+	if key != "opencode:session:cursor-client-sess-123" {
+		t.Fatalf("expected opencode:session:cursor-client-sess-123, got %q", key)
+	}
+	hint := opencodeSessionHint(req, true)
+	if hint == "" || !proxy.IsCanonicalOpenCodeSession(hint) {
+		t.Fatalf("expected canonical session hint, got %q", hint)
+	}
+
+	var rotatedSession string
+	rotate := rotateOpencodeStableSession(key, hint, func(session string) {
+		rotatedSession = session
+	})
+	if rotate == nil {
+		t.Fatal("expected rotate hook to be non-nil")
+	}
+	rotate()
+	if rotatedSession == "" || rotatedSession == hint {
+		t.Fatalf("expected fresh rotated session, got %q (old: %q)", rotatedSession, hint)
+	}
+	if !proxy.IsCanonicalOpenCodeSession(rotatedSession) {
+		t.Errorf("rotated session %q is not canonical", rotatedSession)
 	}
 }

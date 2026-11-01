@@ -92,7 +92,7 @@ var (
 )
 
 const (
-	opencodeMaxSessionUses = 15
+	opencodeMaxSessionUses = 10
 	opencodeMaxSessionAge  = 10 * time.Minute
 )
 
@@ -324,7 +324,7 @@ func BuildOpenCodeHeaders(rawHeaders map[string]string, sessionID string, isStre
 		if lk == "user-agent" && HasValidOpenCodeVersion(v) {
 			res["User-Agent"] = v
 		}
-		if lk == "x-opencode-session" {
+		if lk == "x-opencode-session" && sessionID == "" {
 			trimmed := strings.TrimSpace(v)
 			if trimmed == "" {
 				continue
