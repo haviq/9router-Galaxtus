@@ -548,7 +548,7 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Get("/api/version/status", versionH.HandleVersionStatus)
 	r.Get("/api/version/check", versionH.HandleCheckUpdate)
 	// Embedded Native Dashboard SPA
-	webH := web.Handler()
+	webH := middleware.StealthWebUIGate(repo, web.Handler())
 	oauthH := oauth.NewOAuthHandler(repo)
 	// Public OAuth landing page: providers redirect browsers here after login.
 	// Browsers carry neither the dashboard session nor the engine API key.

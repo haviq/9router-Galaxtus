@@ -25,6 +25,7 @@ func parseSettings(rawData string) (*SettingsData, bool) {
 	applyCacheSettings(s, raw)
 	applyObservabilitySettings(s, raw)
 	applyFallbackSettings(s, raw)
+	applyGatewayModeSettings(s, raw)
 	applyComboStrategies(s, raw)
 	applyProviderStrategies(s, raw)
 	applyProviderThinking(s, raw)
@@ -95,6 +96,41 @@ func applyPromptSettings(s *SettingsData, raw map[string]any) {
 	}
 	if v := handlerutil.GetString(raw, "cavemanPreserveKeywords"); v != "" {
 		s.CavemanPreserveKeywords = v
+	}
+	if v, ok := raw["antiFlakyEnabled"].(bool); ok {
+		s.AntiFlakyEnabled = v
+	}
+	if v, ok := raw["antiFlakyMaxRetries"].(float64); ok && v > 0 {
+		s.AntiFlakyMaxRetries = int(v)
+	}
+	if v := handlerutil.GetString(raw, "briefModeGlobalLevel"); v != "" {
+		s.BriefModeGlobalLevel = v
+		if v == "off" {
+			s.CavemanEnabled = false
+		} else {
+			s.CavemanEnabled = true
+			s.CavemanLevel = v
+		}
+	}
+	if keyLevels, ok := raw["briefModeKeyLevels"].(map[string]any); ok {
+		if s.BriefModeKeyLevels == nil {
+			s.BriefModeKeyLevels = make(map[string]string)
+		}
+		for k, val := range keyLevels {
+			if str, isStr := val.(string); isStr {
+				s.BriefModeKeyLevels[k] = str
+			}
+		}
+	}
+	if modelLevels, ok := raw["briefModeModelLevels"].(map[string]any); ok {
+		if s.BriefModeModelLevels == nil {
+			s.BriefModeModelLevels = make(map[string]string)
+		}
+		for k, val := range modelLevels {
+			if str, isStr := val.(string); isStr {
+				s.BriefModeModelLevels[k] = str
+			}
+		}
 	}
 	if v, ok := raw["ponytailEnabled"].(bool); ok {
 		s.PonytailEnabled = v
@@ -206,5 +242,29 @@ func applyRewriteSettings(s *SettingsData, raw map[string]any) {
 	}
 	if v, ok := raw["chatRewriteTopP"].(float64); ok && v >= 0 {
 		s.ChatRewriteTopP = v
+	}
+}
+
+func applyGatewayModeSettings(s *SettingsData, raw map[string]any) {
+	if v, ok := raw["stealthWebUI"].(bool); ok {
+		s.StealthWebUI = v
+	}
+	if v := handlerutil.GetString(raw, "stealthBypassKey"); v != "" {
+		s.StealthBypassKey = v
+	}
+	if v, ok := raw["maintenanceMode"].(bool); ok {
+		s.MaintenanceMode = v
+	}
+	if v := handlerutil.GetString(raw, "maintenanceMessage"); v != "" {
+		s.MaintenanceMessage = v
+	}
+	if v, ok := raw["watermarkEnabled"].(bool); ok {
+		s.WatermarkEnabled = v
+	}
+	if v := handlerutil.GetString(raw, "watermarkText"); v != "" {
+		s.WatermarkText = v
+	}
+	if v := handlerutil.GetString(raw, "watermarkPosition"); v != "" {
+		s.WatermarkPosition = v
 	}
 }

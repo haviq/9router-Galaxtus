@@ -366,7 +366,6 @@
       if (repetitionPenalty !== 1.0) requestBody.repetition_penalty = Number(repetitionPenalty)
       if (frequencyPenalty !== 0) requestBody.frequency_penalty = Number(frequencyPenalty)
       if (presencePenalty !== 0) requestBody.presence_penalty = Number(presencePenalty)
-      if (contextLength > 0) requestBody.context_length = Number(contextLength)
 
       const authHeaders = getAuthHeaders()
 

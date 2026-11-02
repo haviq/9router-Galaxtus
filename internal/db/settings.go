@@ -105,6 +105,11 @@ type SettingsData struct {
 	CavemanLanguage         string          `json:"cavemanLanguage,omitempty"`
 	CavemanInputMode        bool            `json:"cavemanInputMode,omitempty"`
 	CavemanPreserveKeywords string          `json:"cavemanPreserveKeywords,omitempty"`
+	AntiFlakyEnabled        bool            `json:"antiFlakyEnabled"`
+	AntiFlakyMaxRetries     int             `json:"antiFlakyMaxRetries,omitempty"`
+	BriefModeGlobalLevel    string          `json:"briefModeGlobalLevel,omitempty"`
+	BriefModeKeyLevels      map[string]string `json:"briefModeKeyLevels,omitempty"`
+	BriefModeModelLevels    map[string]string `json:"briefModeModelLevels,omitempty"`
 	PonytailEnabled         bool            `json:"ponytailEnabled"`
 	PonytailLevel           string          `json:"ponytailLevel"`
 	ADHDEnabled             bool            `json:"adhdEnabled"`
@@ -131,6 +136,16 @@ type SettingsData struct {
 	SemanticCacheTTL           int                             `json:"semanticCacheTTL,omitempty"`
 	SemanticCacheMaxEntries    int                             `json:"semanticCacheMaxEntries,omitempty"`
 	AutoUpdate                 bool                            `json:"autoUpdate"`
+	// Stealth Web UI: gates root / base URL web UI behind authentication or bypass key.
+	StealthWebUI               bool                            `json:"stealthWebUI"`
+	StealthBypassKey           string                          `json:"stealthBypassKey,omitempty"`
+	// Gateway Maintenance Mode: blocks inference requests with HTTP 503 while allowing admin access.
+	MaintenanceMode            bool                            `json:"maintenanceMode"`
+	MaintenanceMessage         string                          `json:"maintenanceMessage,omitempty"`
+	// Model Watermarking: appends/prepends signature to responses.
+	WatermarkEnabled           bool                            `json:"watermarkEnabled"`
+	WatermarkText              string                          `json:"watermarkText,omitempty"`
+	WatermarkPosition          string                          `json:"watermarkPosition,omitempty"` // "suffix" or "prefix"
 	FallbackStrategy           string                          `json:"fallbackStrategy,omitempty"`
 	StickyRoundRobinLimit      int                             `json:"stickyRoundRobinLimit,omitempty"`
 	ForceFallback              bool                            `json:"forceFallback,omitempty"`
@@ -255,6 +270,11 @@ func DefaultSettings() *SettingsData {
 		CavemanLanguage:         "en",
 		CavemanInputMode:        false,
 		CavemanPreserveKeywords: "",
+		AntiFlakyEnabled:        true,
+		AntiFlakyMaxRetries:     2,
+		BriefModeGlobalLevel:    "off",
+		BriefModeKeyLevels:      make(map[string]string),
+		BriefModeModelLevels:    make(map[string]string),
 		PonytailEnabled:         false,
 		PonytailLevel:           "full",
 		ADHDEnabled:             false,
@@ -272,6 +292,13 @@ func DefaultSettings() *SettingsData {
 		SemanticCacheTTL:        1440,
 		SemanticCacheMaxEntries: 1000,
 		AutoUpdate:              false,
+		StealthWebUI:            false,
+		StealthBypassKey:        "",
+		MaintenanceMode:         false,
+		MaintenanceMessage:      "Gateway is currently under maintenance. Please try again later.",
+		WatermarkEnabled:        false,
+		WatermarkText:           "\n\n⚡ Served by Galactus AI",
+		WatermarkPosition:       "suffix",
 		CapacityAdapter: map[string]CapacityAdapterEntry{
 			"vision":     {Enabled: true, RoundRobin: false, Models: []string{}},
 			"pdf":        {Enabled: false, RoundRobin: false, Models: []string{}},

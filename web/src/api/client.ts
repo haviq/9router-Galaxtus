@@ -288,6 +288,13 @@ export interface Settings {
   chatRewriteTopP?: number
   appName?: string
   appLogoUrl?: string
+  stealthWebUI?: boolean
+  stealthBypassKey?: string
+  maintenanceMode?: boolean
+  maintenanceMessage?: string
+  watermarkEnabled?: boolean
+  watermarkText?: string
+  watermarkPosition?: 'suffix' | 'prefix' | string
   requireApiKey?: boolean
   tunnelDashboardAccess?: boolean
   rtkEnabled?: boolean
@@ -306,6 +313,11 @@ export interface Settings {
   cavemanLanguage?: string
   cavemanInputMode?: boolean
   cavemanPreserveKeywords?: string
+  antiFlakyEnabled?: boolean
+  antiFlakyMaxRetries?: number
+  briefModeGlobalLevel?: string
+  briefModeKeyLevels?: Record<string, string>
+  briefModeModelLevels?: Record<string, string>
   ponytailEnabled?: boolean
   ponytailLevel?: string
   adhdEnabled?: boolean

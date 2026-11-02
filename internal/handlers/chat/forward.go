@@ -73,6 +73,18 @@ func (h *ChatHandler) forwardRequest(
 	if apiKey != "" && providers.ShouldApplyNousAttribution(cfg.BaseURL) {
 		body = providers.ApplyNousAttribution(body)
 	}
+	// Dahl / Gonka strict parameter validation: strip non-standard parameters rejected by Gonka network (e.g. context_length)
+	if provider == "dahl" || (cfg != nil && (strings.Contains(cfg.BaseURL, "dahl.global") || strings.Contains(cfg.BaseURL, "gonka"))) {
+		var bodyMap map[string]any
+		if err := json.Unmarshal(body, &bodyMap); err == nil {
+			if _, hasCtx := bodyMap["context_length"]; hasCtx {
+				delete(bodyMap, "context_length")
+				if newBody, err := json.Marshal(bodyMap); err == nil {
+					body = newBody
+				}
+			}
+		}
+	}
 	resp, err := internalproxy.ForwardOpenAI(ctx, httpClient, cfg, apiKey, body, isStream)
 	if err != nil {
 		return fmt.Errorf("forward to upstream: %w", err)
@@ -173,6 +185,14 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 		if err != nil {
 			return err
 		}
+		if wm, ok := WatermarkFromContext(ctx); ok && wm.Enabled && wm.Text != "" {
+			watermarkFrame := BuildWatermarkSSEChunk(wm.Text)
+			metrics.ResponseBuf.Write(watermarkFrame)
+			_, _ = hw.Write(watermarkFrame)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
 		return nil
 	}
 
@@ -212,6 +232,14 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			flusher.Flush()
 		}
 	})
+	if wm, ok := WatermarkFromContext(ctx); ok && wm.Enabled && wm.Text != "" {
+		watermarkFrame := BuildClaudeWatermarkSSEChunk(wm.Text)
+		metrics.ResponseBuf.Write(watermarkFrame)
+		_, _ = hw.Write(watermarkFrame)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
 	// A shutdown abort cuts the stream mid-way. End it with the same terminator
 	// a natural finish emits, so the client sees a clean [DONE] instead of a
 	// truncated stream (the stall reader already closed the upstream body).
@@ -422,6 +450,9 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 	body = filtered
 	if rule := RemaskRuleFromContext(ctx); rule != nil {
 		body = MaskResponseJSON(body, rule)
+	}
+	if wm, ok := WatermarkFromContext(ctx); ok && wm.Enabled && wm.Text != "" {
+		body = ApplyWatermarkToJSON(body, wm.Text, wm.Position)
 	}
 
 	// A /v1/responses client on a Chat Completions upstream needs the answer in

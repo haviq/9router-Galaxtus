@@ -28,7 +28,7 @@ func TestModelScoped429_DoesNotBlockUnrelatedModelsOnSameAccount(t *testing.T) {
 		"baseUrl":     srv.URL,
 		"projectId":   "test-proj-429",
 		"providerSpecificData": map[string]any{
-			"projectId": "test-proj-429",
+			"projectId": "tescleart-proj-429",
 		},
 	})
 	if _, err := database.Exec(`INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES ('conn-multi', 'antigravity', 'oauth', 'Multi Model Conn', 1, 1, ?, '2026-07-18T00:00:00Z', '2026-07-18T00:00:00Z')`, string(connData)); err != nil {
@@ -296,11 +296,11 @@ func TestModelScoped401_UnsupportedModelDoesNotBlockAccount(t *testing.T) {
 
 func TestModelScopedError_NegativeAuthTestsPinAccountCooldown(t *testing.T) {
 	tests := []struct {
-		name        string
-		statusCode  int
-		errorText   string
-		model       string
-		wantScoped  bool
+		name       string
+		statusCode int
+		errorText  string
+		model      string
+		wantScoped bool
 	}{
 		{
 			name:       "401 incorrect api key",

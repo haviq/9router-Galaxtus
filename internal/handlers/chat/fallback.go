@@ -13,6 +13,7 @@ import (
 	"9router/proxy/internal/tracing"
 	"9router/proxy/internal/translator"
 	"9router/proxy/internal/usagetracker"
+	"9router/proxy/internal/antiflaky"
 	"bytes"
 	"context"
 	json "encoding/json/v2"
@@ -144,6 +145,18 @@ func (h *ChatHandler) handleAccountFallback(
 		}
 	}
 
+	antiFlakyEnabled := false
+	antiFlakyMaxRetries := 2
+	if h.Repo != nil {
+		if s, sErr := h.Repo.GetSettings(); sErr == nil && s != nil {
+			antiFlakyEnabled = s.AntiFlakyEnabled
+			if s.AntiFlakyMaxRetries > 0 {
+				antiFlakyMaxRetries = s.AntiFlakyMaxRetries
+			}
+		}
+	}
+	flakyRetriesCount := 0
+
 	var excludeIDs []string
 	// Pools already refused by an OpenCode free-tier gate in this turn. The
 	// resolver filters them out, so the retry walks to the next egress instead
@@ -177,14 +190,48 @@ func (h *ChatHandler) handleAccountFallback(
 		// to a different account (force fallback), and the usage row, the logs
 		// and the exclusion below must all name the account that was dialled.
 		log.Debug("fallback", "connection", "conn", connObj.ID, "candidate", c.ID)
+		var captureWriter *bytes.Buffer
+		var targetWriter http.ResponseWriter = w
+		var bufferedW *bufferedResponseWriter
+		if antiFlakyEnabled && !isStream && len(allConns) > 1 {
+			captureWriter = &bytes.Buffer{}
+			bufferedW = newBufferedResponseWriter(w, captureWriter)
+			targetWriter = bufferedW
+		}
+
 		attemptStart := time.Now()
 		releaseLoad := globalLoadTracker.Acquire(connObj.ID)
 		if err := h.tryForwardWithConnection(forwardRequestParams{
-			Ctx: ctx, W: w, Provider: provider, Model: model,
+			Ctx: ctx, W: targetWriter, Provider: provider, Model: model,
 			ConnectionID: connObj.ID, ConnName: connObjName(connObj), ConnEmail: connObjEmail(connObj),
 			ConnData: connData, Body: body,
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		}); err == nil {
+			if captureWriter != nil && bufferedW != nil {
+				respBytes := captureWriter.Bytes()
+				if isFlaky, reason := antiflaky.IsFlakyResponse(respBytes); isFlaky {
+					if flakyRetriesCount < antiFlakyMaxRetries {
+						flakyRetriesCount++
+						log.Warn("anti_flaky", "flaky upstream response caught by Anti-Flaky Guard, failing over to next connection",
+							"conn", connObj.ID, "reason", reason, "retry", flakyRetriesCount)
+						releaseLoad(false, time.Since(attemptStart))
+						excludeIDs = append(excludeIDs, connObj.ID)
+						lastErr = fmt.Errorf("anti-flaky: %s", reason)
+						continue
+					}
+					log.Warn("anti_flaky", "anti-flaky max retries reached, failing open", "retries", flakyRetriesCount)
+					flushBufferedResponseWriter(w, bufferedW, captureWriter)
+					releaseLoad(true, time.Since(attemptStart))
+					RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 200, nil, time.Since(attemptStart).Milliseconds())
+					return nil
+				}
+				if flakyRetriesCount > 0 {
+					w.Header().Set("x-9router-pro-flaky-retries", strconv.Itoa(flakyRetriesCount))
+				}
+				flushBufferedResponseWriter(w, bufferedW, captureWriter)
+			} else if flakyRetriesCount > 0 {
+				w.Header().Set("x-9router-pro-flaky-retries", strconv.Itoa(flakyRetriesCount))
+			}
 			releaseLoad(true, time.Since(attemptStart))
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 200, nil, time.Since(attemptStart).Milliseconds())
 			return nil
@@ -1285,13 +1332,44 @@ func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeN
 	if claudeNative {
 		inject = tokensaver.InjectSystemPromptClaude
 	}
-	if h.TokenSaver.CavemanEnabled() {
+	// Brief Mode / Caveman scoping: Model override > API Key override > Global Caveman
+	cavemanActive := h.TokenSaver.CavemanEnabled()
+	cavemanLvl := h.TokenSaver.CavemanLevel()
+
+	if h.Repo != nil {
+		if s, err := h.Repo.GetSettings(); err == nil && s != nil {
+			reqModel := translator.RequestedModelFromContext(ctx)
+			reqKey := guardrailKeyIDFromContext(ctx)
+
+			if reqModel != "" && len(s.BriefModeModelLevels) > 0 {
+				if lvl, ok := s.BriefModeModelLevels[reqModel]; ok && lvl != "" {
+					if lvl == "off" {
+						cavemanActive = false
+					} else {
+						cavemanActive = true
+						cavemanLvl = lvl
+					}
+				}
+			} else if reqKey != "" && len(s.BriefModeKeyLevels) > 0 {
+				if lvl, ok := s.BriefModeKeyLevels[reqKey]; ok && lvl != "" {
+					if lvl == "off" {
+						cavemanActive = false
+					} else {
+						cavemanActive = true
+						cavemanLvl = lvl
+					}
+				}
+			}
+		}
+	}
+
+	if cavemanActive {
 		bypass := false
 		if h.TokenSaver.CavemanAutoClarity() && tokensaver.ShouldBypassCaveman(out) {
 			bypass = true
 		}
 		if !bypass {
-			prompt := tokensaver.GetCavemanPromptWithLang(h.TokenSaver.CavemanLevel(), h.TokenSaver.CavemanLanguage())
+			prompt := tokensaver.GetCavemanPromptWithLang(cavemanLvl, h.TokenSaver.CavemanLanguage())
 			if next, did := inject(out, prompt); did {
 				out = next
 			}

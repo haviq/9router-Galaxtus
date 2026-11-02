@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"9router/proxy/internal/auth"
 	"9router/proxy/internal/changelogfrag"
 	json "9router/proxy/internal/fastjson"
 	"9router/proxy/internal/handlerutil"
@@ -47,7 +48,63 @@ func (c *cacheCaptureWriter) Write(b []byte) (int, error) {
 }
 
 // HandleChatCompletions handles POST /v1/chat/completions (OpenAI format requests).
+
+func (h *ChatHandler) checkMaintenance(w http.ResponseWriter, r *http.Request) bool {
+	if h == nil || h.Repo == nil {
+		return false
+	}
+	settings, err := h.Repo.GetSettings()
+	if err != nil || settings == nil || !settings.MaintenanceMode {
+		return false
+	}
+	// Admin session or CLI token bypasses maintenance
+	if auth.SessionValid(r) || auth.ValidCLIToken(r.Header.Get(auth.CLITokenHeader)) {
+		return false
+	}
+	if settings.StealthBypassKey != "" {
+		if r.Header.Get("X-Admin-Key") == settings.StealthBypassKey || r.URL.Query().Get("key") == settings.StealthBypassKey {
+			return false
+		}
+	}
+	msg := strings.TrimSpace(settings.MaintenanceMessage)
+	if msg == "" {
+		msg = "Gateway is currently under maintenance. Please try again later."
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Retry-After", "300")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	resp := map[string]any{
+		"error": map[string]any{
+			"message": msg,
+			"type":    "maintenance_error",
+			"param":   nil,
+			"code":    "service_maintenance",
+		},
+	}
+	b, _ := json.Marshal(resp)
+	_, _ = w.Write(b)
+	return true
+}
+
+func (h *ChatHandler) withWatermarkConfig(ctx context.Context) context.Context {
+	if h == nil || h.Repo == nil {
+		return ctx
+	}
+	s, err := h.Repo.GetSettings()
+	if err != nil || s == nil || !s.WatermarkEnabled || strings.TrimSpace(s.WatermarkText) == "" {
+		return ctx
+	}
+	return WithWatermark(ctx, WatermarkConfig{
+		Enabled:  true,
+		Text:     s.WatermarkText,
+		Position: s.WatermarkPosition,
+	})
+}
+
 func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	if h.checkMaintenance(w, r) {
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		middleware.WriteBodyReadError(w, r, err)
@@ -129,6 +186,7 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	// Record the dispatching key so the outbound guardrail tap can resolve the
 	// right policy. A keyless caller leaves it unset and the tap stays inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = h.withWatermarkConfig(ctx)
 
 	// Feature 4: Fast Exact Prompt Cache (<2ms TTFT, zero upstream cost)
 	fastHash := semanticcache.GlobalFastCache.ComputeHash(reqBody.Model, body)
@@ -299,6 +357,9 @@ func (h *ChatHandler) handleSingleModel(ctx context.Context, w http.ResponseWrit
 
 // HandleMessages handles POST /v1/messages (Claude format requests).
 func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
+	if h.checkMaintenance(w, r) {
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Error("chat", "read body failed", "error", err)
@@ -409,6 +470,7 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// policy scoped to it. A keyless caller leaves it unset and the tap stays
 	// inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = h.withWatermarkConfig(ctx)
 
 	requiredCaps := DetectRequiredCapabilities(body)
 

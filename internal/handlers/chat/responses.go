@@ -68,6 +68,9 @@ func newResponsesBridge(ctx context.Context, hw *internalproxy.HeartbeatWriter, 
 // that has to know it and threading a new bool through every request struct
 // would touch five call sites for a single flag.
 func (h *ChatHandler) HandleResponses(w http.ResponseWriter, r *http.Request) {
+	if h.checkMaintenance(w, r) {
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Error("chat", "read body failed", "error", err)
@@ -185,6 +188,7 @@ func (h *ChatHandler) newResponsesContext(r *http.Request, requestedModel string
 	ctx = translator.WithRequestedModel(ctx, stripModelContextMarker(requestedModel))
 	// The dispatching key decides which guardrail policy governs the response.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = h.withWatermarkConfig(ctx)
 
 	providerCfg, err := h.getProviderConfig(modelInfo.Provider, nil)
 	if err == nil && executor.UpstreamSpeaksResponses(modelInfo.Provider, modelInfo.Model, providerCfg) {

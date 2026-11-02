@@ -43,3 +43,23 @@ func TestRenameMaxTokensBody(t *testing.T) {
 		t.Errorf("unparsable body changed: %s", got)
 	}
 }
+
+func TestSanitizeDahlBody(t *testing.T) {
+	var m map[string]jsontext.Value
+
+	out := sanitizeDahlBody([]byte(`{"model":"deepseek-ai/DeepSeek-V4-Flash-0731","context_length":65536,"messages":[]}`))
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatalf("sanitized body does not parse: %v", err)
+	}
+	if _, ok := m["context_length"]; ok {
+		t.Error("context_length must be stripped for dahl/gonka")
+	}
+	if string(m["model"]) != `"deepseek-ai/DeepSeek-V4-Flash-0731"` {
+		t.Errorf("model altered: %s", m["model"])
+	}
+
+	untouched := []byte(`{"model":"glm-5","messages":[]}`)
+	if got := sanitizeDahlBody(untouched); string(got) != string(untouched) {
+		t.Errorf("body without context_length changed: %s", got)
+	}
+}

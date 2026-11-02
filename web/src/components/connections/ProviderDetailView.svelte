@@ -2746,7 +2746,8 @@
       }
       const pending: CustomModelWrite[] = []
       for (const m of models) {
-        const modelId = typeof m === 'string' ? m : (m.id || m.name || m.model || '')
+        const rawId = typeof m === 'string' ? m : (m.id || m.name || m.model || '')
+        const modelId = typeof rawId === 'string' ? rawId.trim() : ''
         if (!modelId || compatibleRows.some((r) => r.id === modelId)) continue
         if (freeOnly && !isFreeTierModelId(modelId)) continue
         pending.push({
@@ -2802,7 +2803,8 @@
       }
       const pending: CustomModelWrite[] = []
       for (const m of models) {
-        const modelId = typeof m === 'string' ? m : (m.id || m.name || m.model || '')
+        const rawId = typeof m === 'string' ? m : (m.id || m.name || m.model || '')
+        const modelId = typeof rawId === 'string' ? rawId.trim() : ''
         if (!modelId) continue
         const alreadyBuiltin = builtInModels.some((b) => b.id === modelId)
         const alreadyCustom = providerCustomModels.some((c) => c.id === modelId)

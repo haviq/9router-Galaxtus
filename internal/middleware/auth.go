@@ -3,6 +3,7 @@ package middleware
 import (
 	"9router/proxy/internal/log"
 	"context"
+	json "encoding/json/v2"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -27,6 +28,33 @@ const ApiKeyContextKey ContextKey = "apiKey"
 func RequireApiKey(repo *db.Repo) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if repo != nil {
+				if s, err := repo.GetSettings(); err == nil && s != nil && s.MaintenanceMode {
+					// Admin session or CLI token bypasses maintenance mode
+					if !auth.SessionValid(r) && !auth.ValidCLIToken(r.Header.Get(auth.CLITokenHeader)) {
+						if s.StealthBypassKey == "" || (r.Header.Get("X-Admin-Key") != s.StealthBypassKey && r.URL.Query().Get("key") != s.StealthBypassKey) {
+							msg := strings.TrimSpace(s.MaintenanceMessage)
+							if msg == "" {
+								msg = "Gateway is currently under maintenance. Please try again later."
+							}
+							w.Header().Set("Content-Type", "application/json; charset=utf-8")
+							w.Header().Set("Retry-After", "300")
+							w.WriteHeader(http.StatusServiceUnavailable)
+							resp := map[string]any{
+								"error": map[string]any{
+									"message": msg,
+									"type":    "maintenance_error",
+									"param":   nil,
+									"code":    "service_maintenance",
+								},
+							}
+							b, _ := json.Marshal(resp)
+							_, _ = w.Write(b)
+							return
+						}
+					}
+				}
+			}
 			apiKeyString := ExtractApiKey(r)
 			if apiKeyString == "" {
 				// Allow requests authenticated via dashboard session (or local dashboard when login not required)

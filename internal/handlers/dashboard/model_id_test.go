@@ -2,9 +2,6 @@ package dashboard
 
 import "testing"
 
-// The guard exists because a paste that was never split used to be stored as one id:
-// "model1 model2:free model3-ext" became a single model whose id contained the spaces,
-// and nothing could address it without reproducing them exactly.
 func TestInvalidModelIDReason(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -17,8 +14,12 @@ func TestInvalidModelIDReason(t *testing.T) {
 		{name: "id with a colon and dot", id: "gpt-5.2:free", valid: true},
 		{name: "id with a colon and slash-free", id: "model1:free", valid: true},
 		{name: "id with a dot", id: "gpt-5.2-turbo", valid: true},
+		{name: "id with single space (uncensored models)", id: "Deepseek Uncen v2", valid: true},
+		{name: "id with multiple single spaces", id: "Solar Pro 4 Uncen VIP", valid: true},
 		{name: "empty", id: "", valid: false},
-		{name: "unsplit space paste", id: "model1 model2:free model3-ext", valid: false},
+		{name: "consecutive spaces", id: "model1  model2", valid: false},
+		{name: "leading space", id: " model1", valid: false},
+		{name: "trailing space", id: "model1 ", valid: false},
 		{name: "unsplit comma paste", id: "model1,model2:free,model3-ext", valid: false},
 		{name: "unsplit semicolon paste", id: "model1;model2:free;model3-ext", valid: false},
 		{name: "tab", id: "model1\tmodel2", valid: false},

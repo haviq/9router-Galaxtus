@@ -1,5 +1,6 @@
 {
   "downloadUrl": "https://github.com/haviq/9router-Galaxtus/releases/latest",
-  "latestVersion": "1.0.0",
-  "releaseNotes": "9router Galactus v1.0.0: Initial Galactus Release with Photorealistic 3D Galaxy Canvas, Apple/iOS Smoked Glass Interface, Client Self-Service Telemetry & Playground, Automated QRIS Top-Up Billing Flow, and Go/Wasm/Vite Performance Optimizations."
+  "latestVersion": "1.0.1",
+  "sha256": "250ae2ff78c3a981e575b10ba9270168584ede9b7fb83cf4ace49e167523795a",
+  "releaseNotes": "9router Galactus v1.0.1: Stealth Web UI (Base URL Gating), Gateway Maintenance Mode (503), Model Watermarking, and Single-Space Custom Model IDs fix."
 }

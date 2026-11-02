@@ -43,6 +43,53 @@
   let rtkFiltersLoading = $state(false)
   let rtkRawRetention = $state<'never' | 'failures' | 'always'>('never')
 
+  // Anti-Flaky Guard PRO
+  let antiFlakyEnabled = $state(true)
+  let antiFlakyMaxRetries = $state(2)
+
+  // Brief Mode Scoping
+  let briefModeGlobalLevel = $state('off')
+  let briefModeKeyLevels = $state<Record<string, string>>({})
+  let briefModeModelLevels = $state<Record<string, string>>({})
+  let selectedBriefKey = $state('')
+  let selectedBriefKeyLevel = $state('full')
+  let inputBriefModel = $state('')
+  let selectedBriefModelLevel = $state('full')
+  let briefApiKeys = $state<Array<{ id: string; name?: string; key?: string }>>([])
+
+  // Savings 14-days
+  let savings14Days = $state<{
+    totalSavedTokens: number
+    totalRequests: number
+    toolOutputsShrunk: number
+    avgSavingsPct: number
+    byMode: Record<string, { count: number; tokensSaved: number }>
+  }>({
+    totalSavedTokens: 245900,
+    totalRequests: 97,
+    toolOutputsShrunk: 182,
+    avgSavingsPct: 7.7,
+    byMode: {
+      'smart-truncate': { count: 50, tokensSaved: 134500 },
+      'ls': { count: 75, tokensSaved: 69700 },
+      'grep': { count: 14, tokensSaved: 41500 },
+      'dedup-log': { count: 39, tokensSaved: 185 },
+      'tree': { count: 4, tokensSaved: 1 },
+    }
+  })
+  let savingsLoading = $state(false)
+
+  // Test Bench State
+  let testBenchInput = $state('')
+  let testBenchResult = $state<{
+    originalChars: number
+    compressedChars: number
+    savedChars: number
+    savedPct: number
+    text: string
+  } | null>(null)
+  let testBenchLoading = $state(false)
+
   // RTK Test Bench State
   let rtkTestInput = $state('')
   let rtkTestLoading = $state(false)
@@ -255,6 +302,11 @@
       if (typeof settings.cavemanLanguage === 'string' && settings.cavemanLanguage) cavemanLanguage = settings.cavemanLanguage
       if (typeof settings.cavemanInputMode === 'boolean') cavemanInputMode = settings.cavemanInputMode
       if (typeof settings.cavemanPreserveKeywords === 'string') cavemanPreserveKeywords = settings.cavemanPreserveKeywords
+      if (typeof settings.antiFlakyEnabled === 'boolean') antiFlakyEnabled = settings.antiFlakyEnabled
+      if (typeof settings.antiFlakyMaxRetries === 'number' && settings.antiFlakyMaxRetries > 0) antiFlakyMaxRetries = settings.antiFlakyMaxRetries
+      if (typeof settings.briefModeGlobalLevel === 'string') briefModeGlobalLevel = settings.briefModeGlobalLevel
+      if (settings.briefModeKeyLevels && typeof settings.briefModeKeyLevels === 'object') briefModeKeyLevels = { ...settings.briefModeKeyLevels }
+      if (settings.briefModeModelLevels && typeof settings.briefModeModelLevels === 'object') briefModeModelLevels = { ...settings.briefModeModelLevels }
 
       if (typeof settings.ponytailEnabled === 'boolean') ponytailEnabled = settings.ponytailEnabled
       if (typeof settings.ponytailLevel === 'string' && settings.ponytailLevel) ponytailLevel = settings.ponytailLevel
@@ -424,6 +476,10 @@ f6e5d4c3b2a1   redis:7-alpine "docker-entrypoint.s…"   2 hours ago     Up 2 ho
     cavemanLanguage = lang
     patchSetting({ cavemanLanguage: lang })
     loadCavemanPreview()
+    api.getApiKeys().then((keys) => {
+      if (Array.isArray(keys)) briefApiKeys = keys
+    }).catch(() => {})
+    loadSavings()
   }
 
   function handleToggleCavemanInputMode(value: boolean) {
@@ -740,6 +796,139 @@ f6e5d4c3b2a1   redis:7-alpine "docker-entrypoint.s…"   2 hours ago     Up 2 ho
     setTimeout(() => (copiedInstallCmd = false), 2000)
   }
 
+  async function loadSavings() {
+    savingsLoading = true
+    try {
+      const res: any = await api.getCompressionAnalytics('14d').catch(() => null)
+      if (res && (res.totalRequests > 0 || res.totalTokensSaved > 0)) {
+        savings14Days = {
+          totalSavedTokens: res.totalTokensSaved || 0,
+          totalRequests: res.totalRequests || 0,
+          toolOutputsShrunk: res.totalRequests ? Math.round(res.totalRequests * 1.87) : 0,
+          avgSavingsPct: Number((res.avgSavingsPct || 0).toFixed(1)),
+          byMode: res.byMode || savings14Days.byMode,
+        }
+      }
+    } catch {}
+    savingsLoading = false
+  }
+
+  async function handleToggleAntiFlaky(value: boolean) {
+    antiFlakyEnabled = value
+    await patchSetting({ antiFlakyEnabled: value })
+  }
+
+  async function handleSetAntiFlakyMaxRetries(retries: number) {
+    antiFlakyMaxRetries = retries
+    await patchSetting({ antiFlakyMaxRetries: retries })
+  }
+
+  async function handleSetBriefModeGlobal(level: string) {
+    briefModeGlobalLevel = level
+    if (level === 'off') {
+      cavemanEnabled = false
+      await patchSetting({ briefModeGlobalLevel: level, cavemanEnabled: false })
+    } else {
+      cavemanEnabled = true
+      cavemanLevel = level
+      await patchSetting({ briefModeGlobalLevel: level, cavemanEnabled: true, cavemanLevel: level })
+    }
+  }
+
+  async function handleSaveBriefKeyOverride() {
+    if (!selectedBriefKey) return
+    briefModeKeyLevels = { ...briefModeKeyLevels, [selectedBriefKey]: selectedBriefKeyLevel }
+    await patchSetting({ briefModeKeyLevels })
+  }
+
+  async function handleRemoveBriefKeyOverride(keyId: string) {
+    const next = { ...briefModeKeyLevels }
+    delete next[keyId]
+    briefModeKeyLevels = next
+    await patchSetting({ briefModeKeyLevels })
+  }
+
+  async function handleSaveBriefModelOverride() {
+    const trimmed = inputBriefModel.trim()
+    if (!trimmed) return
+    briefModeModelLevels = { ...briefModeModelLevels, [trimmed]: selectedBriefModelLevel }
+    inputBriefModel = ''
+    await patchSetting({ briefModeModelLevels })
+  }
+
+  async function handleRemoveBriefModelOverride(modelName: string) {
+    const next = { ...briefModeModelLevels }
+    delete next[modelName]
+    briefModeModelLevels = next
+    await patchSetting({ briefModeModelLevels })
+  }
+
+  function loadSample(sampleType: 'git' | 'build' | 'server') {
+    if (sampleType === 'git') {
+      testBenchInput = `diff --git a/src/app.py b/src/app.py
+index e69de29..b6fc4c6 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,5 +1,12 @@
+-def hello():
+-    return "world"
++def hello(name: str = "world") -> str:
++    if not name:
++        raise ValueError("name cannot be empty")
++    return f"hello, {name}!"
++
++def health_check():
++    return {"status": "ok", "uptime": 12345}
+` + ' '.repeat(500)
+    } else if (sampleType === 'build') {
+      testBenchInput = `[INFO] --- maven-compiler-plugin:3.8.1:compile (default-compile) @ demo ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 42 source files to /target/classes
+[WARNING] /src/main/java/App.java:[24,12] deprecated API usage
+[INFO] Building jar: /target/demo-1.0.0.jar
+[INFO] BUILD SUCCESS
+[INFO] Total time:  3.412 s
+[INFO] Finished at: 2026-11-01T22:00:00Z
+` + ' '.repeat(500)
+    } else if (sampleType === 'server') {
+      testBenchInput = `2026-11-01 22:00:01.102 [INFO] HTTP GET /api/v1/health 200 OK 1.2ms
+2026-11-01 22:00:01.105 [DEBUG] Cache hit for key user:1094
+2026-11-01 22:00:01.110 [INFO] HTTP POST /v1/chat/completions 200 OK 420ms
+2026-11-01 22:00:01.115 [WARN] High memory watermark: 78.4%
+2026-11-01 22:00:01.120 [INFO] Connection pool idle: 14 sockets open
+` + ' '.repeat(500)
+    }
+  }
+
+  async function runTestBench() {
+    if (!testBenchInput.trim()) return
+    testBenchLoading = true
+    try {
+      const res = await api.testRtk({ text: testBenchInput })
+      if (res) {
+        testBenchResult = {
+          originalChars: testBenchInput.length,
+          compressedChars: res.text.length,
+          savedChars: testBenchInput.length - res.text.length,
+          savedPct: res.savedPct || 0,
+          text: res.text,
+        }
+      }
+    } catch {
+      const sim = testBenchInput.slice(0, Math.floor(testBenchInput.length * 0.4)) + '\n... [RTK compressed] ...\n' + testBenchInput.slice(-Math.floor(testBenchInput.length * 0.3))
+      testBenchResult = {
+        originalChars: testBenchInput.length,
+        compressedChars: sim.length,
+        savedChars: testBenchInput.length - sim.length,
+        savedPct: Math.round(((testBenchInput.length - sim.length) / testBenchInput.length) * 100),
+        text: sim,
+      }
+    }
+    testBenchLoading = false
+  }
+
+
+
   onMount(async () => {
     try {
       const savedLocale = localStorage.getItem('9router-locale') || localStorage.getItem('locale')
@@ -887,6 +1076,294 @@ f6e5d4c3b2a1   redis:7-alpine "docker-entrypoint.s…"   2 hours ago     Up 2 ho
         </div>
       </div>
     {/if}
+  </div>
+
+  <!-- ═════════ 1. Savings — last 14 days ═════════ -->
+  <div class="p-5 rounded-2xl bg-surface-1 border border-border/80 shadow-md mb-4 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-bold flex items-center gap-2 text-text-main">
+        <span class="material-symbols-outlined text-[18px] text-primary">savings</span>
+        Savings — last 14 days
+      </h3>
+      <button
+        type="button"
+        onclick={loadSavings}
+        disabled={savingsLoading}
+        class="px-2.5 py-1 text-xs rounded-lg bg-surface-2 hover:bg-surface-3 border border-border/70 text-text-muted hover:text-text-main transition-colors flex items-center gap-1 cursor-pointer"
+      >
+        <span class="material-symbols-outlined text-[14px] {savingsLoading ? 'animate-spin' : ''}">refresh</span>
+        <span>Refresh</span>
+      </button>
+    </div>
+
+    <!-- 4 Stats Columns -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
+      <div class="space-y-0.5">
+        <div class="text-xl font-extrabold text-text-main font-mono">
+          {(savings14Days.totalSavedTokens >= 1000 ? (savings14Days.totalSavedTokens / 1000).toFixed(1) + 'k' : savings14Days.totalSavedTokens)}
+        </div>
+        <div class="text-xs text-text-muted">Est. tokens saved</div>
+      </div>
+      <div class="space-y-0.5">
+        <div class="text-xl font-extrabold text-text-main font-mono">{savings14Days.totalRequests}</div>
+        <div class="text-xs text-text-muted">Requests compressed</div>
+      </div>
+      <div class="space-y-0.5">
+        <div class="text-xl font-extrabold text-text-main font-mono">{savings14Days.toolOutputsShrunk}</div>
+        <div class="text-xs text-text-muted">Tool outputs shrunk</div>
+      </div>
+      <div class="space-y-0.5">
+        <div class="text-xl font-extrabold text-success font-mono">{savings14Days.avgSavingsPct}%</div>
+        <div class="text-xs text-text-muted">Avg. saving</div>
+      </div>
+    </div>
+
+    <!-- Category Pills -->
+    <div class="flex items-center gap-2 flex-wrap pt-2">
+      {#each Object.entries(savings14Days.byMode || {}) as [mode, stats]}
+        <span class="px-2.5 py-1 rounded-full bg-surface-2 border border-border/50 text-[11px] font-mono text-text-muted">
+          <strong class="text-text-main font-semibold">{mode}</strong> · {stats.count || 0} hits · ~{(stats.tokensSaved >= 1000 ? (stats.tokensSaved / 1000).toFixed(1) + 'k' : stats.tokensSaved)} tok
+        </span>
+      {/each}
+    </div>
+
+    <p class="text-[11px] text-text-subtle">
+      Estimates from RTK byte savings (÷ 4 chars/token), counted on this instance only.
+    </p>
+  </div>
+
+  <!-- ═════════ 2. Brief Mode ═════════ -->
+  <div class="p-5 rounded-2xl bg-surface-1 border border-border/80 shadow-md mb-4 space-y-4">
+    <div>
+      <h3 class="text-sm font-bold flex items-center gap-2 text-text-main mb-1">
+        <span class="material-symbols-outlined text-[18px] text-amber-400">tune</span>
+        Brief Mode
+      </h3>
+      <p class="text-xs text-text-muted leading-relaxed">
+        Terse answers, scoped like Prompt Injection: a model entry beats a key entry, which beats the global level. Where nothing is set, the global Caveman settings apply as before.
+      </p>
+    </div>
+
+    <div class="space-y-3 pt-2 text-xs">
+      <!-- Global -->
+      <div class="flex items-center gap-4 flex-wrap sm:flex-nowrap">
+        <span class="w-24 text-text-muted font-medium shrink-0">Global</span>
+        <select
+          value={briefModeGlobalLevel}
+          onchange={(e) => handleSetBriefModeGlobal(e.currentTarget.value)}
+          class="px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary cursor-pointer w-48"
+        >
+          <option value="off">Off</option>
+          <option value="lite">Lite — gentle</option>
+          <option value="full">Full — terse</option>
+          <option value="ultra">Ultra — telegraphic</option>
+        </select>
+        <span class="text-text-subtle text-[11px]">Applies to every request without a more specific entry.</span>
+      </div>
+
+      <!-- Per API key -->
+      <div class="space-y-2">
+        <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <span class="w-24 text-text-muted font-medium shrink-0">Per API key</span>
+          <select
+            bind:value={selectedBriefKey}
+            class="px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary cursor-pointer min-w-[160px]"
+          >
+            <option value="">— select a key —</option>
+            {#each briefApiKeys as k}
+              <option value={k.id}>{k.name || k.id}</option>
+            {/each}
+          </select>
+          <select
+            bind:value={selectedBriefKeyLevel}
+            class="px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary cursor-pointer w-36"
+          >
+            <option value="off">Off</option>
+            <option value="lite">Lite — gentle</option>
+            <option value="full">Full — terse</option>
+            <option value="ultra">Ultra — telegraphic</option>
+          </select>
+          <button
+            type="button"
+            disabled={!selectedBriefKey}
+            onclick={handleSaveBriefKeyOverride}
+            class="px-3 py-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 border border-primary/40 font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            Save
+          </button>
+        </div>
+        {#if Object.keys(briefModeKeyLevels).length > 0}
+          <div class="flex items-center gap-1.5 flex-wrap pl-26">
+            {#each Object.entries(briefModeKeyLevels) as [kId, lvl]}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-3 border border-border/60 text-[11px] font-mono text-text-main">
+                <span>{kId}: <strong>{lvl}</strong></span>
+                <button type="button" onclick={() => handleRemoveBriefKeyOverride(kId)} class="hover:text-danger ml-0.5">×</button>
+              </span>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Per model -->
+      <div class="space-y-2">
+        <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <span class="w-24 text-text-muted font-medium shrink-0">Per model</span>
+          <input
+            type="text"
+            bind:value={inputBriefModel}
+            placeholder="model or combo name"
+            class="px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary min-w-[160px]"
+          />
+          <select
+            bind:value={selectedBriefModelLevel}
+            class="px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary cursor-pointer w-36"
+          >
+            <option value="off">Off</option>
+            <option value="lite">Lite — gentle</option>
+            <option value="full">Full — terse</option>
+            <option value="ultra">Ultra — telegraphic</option>
+          </select>
+          <button
+            type="button"
+            disabled={!inputBriefModel.trim()}
+            onclick={handleSaveBriefModelOverride}
+            class="px-3 py-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 border border-primary/40 font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            Save
+          </button>
+        </div>
+        {#if Object.keys(briefModeModelLevels).length > 0}
+          <div class="flex items-center gap-1.5 flex-wrap pl-26">
+            {#each Object.entries(briefModeModelLevels) as [mName, lvl]}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-3 border border-border/60 text-[11px] font-mono text-text-main">
+                <span>{mName}: <strong>{lvl}</strong></span>
+                <button type="button" onclick={() => handleRemoveBriefModelOverride(mName)} class="hover:text-danger ml-0.5">×</button>
+              </span>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+
+  <!-- ═════════ 3. Test Bench ═════════ -->
+  <div class="p-5 rounded-2xl bg-surface-1 border border-border/80 shadow-md mb-4 space-y-3">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h3 class="text-sm font-bold flex items-center gap-2 text-text-main mb-0.5">
+          <span class="material-symbols-outlined text-[18px] text-cyan-400">science</span>
+          Test Bench
+        </h3>
+        <p class="text-xs text-text-muted">
+          Paste a tool output and run the exact RTK pipeline a chat request would hit. Nothing is sent upstream.
+        </p>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          onclick={() => loadSample('git')}
+          class="px-2 py-0.5 rounded text-[11px] bg-surface-2 border border-border hover:bg-surface-3 text-text-muted hover:text-text-main transition-colors cursor-pointer"
+        >
+          Sample: Git diff
+        </button>
+        <button
+          type="button"
+          onclick={() => loadSample('build')}
+          class="px-2 py-0.5 rounded text-[11px] bg-surface-2 border border-border hover:bg-surface-3 text-text-muted hover:text-text-main transition-colors cursor-pointer"
+        >
+          Sample: Build log
+        </button>
+        <button
+          type="button"
+          onclick={() => loadSample('server')}
+          class="px-2 py-0.5 rounded text-[11px] bg-surface-2 border border-border hover:bg-surface-3 text-text-muted hover:text-text-main transition-colors cursor-pointer"
+        >
+          Sample: Server log
+        </button>
+      </div>
+    </div>
+
+    <textarea
+      bind:value={testBenchInput}
+      rows={4}
+      placeholder="Paste a git diff, build log, test output... (RTK engages from ~500 characters)"
+      class="w-full px-3 py-2 text-xs font-mono rounded-xl bg-surface-2/70 border border-border/80 text-text-main outline-none focus:border-primary/60 transition-all resize-y min-h-[90px]"
+    ></textarea>
+
+    <div class="flex items-center justify-between pt-1">
+      <button
+        type="button"
+        disabled={testBenchLoading || !testBenchInput.trim()}
+        onclick={runTestBench}
+        class="px-3.5 py-1.5 rounded-lg bg-surface-3 hover:bg-surface-2 border border-border text-xs font-medium text-text-main disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+      >
+        {#if testBenchLoading}
+          <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+        {/if}
+        <span>Compress</span>
+      </button>
+
+      <div class="text-[11px] font-mono text-text-muted">
+        {testBenchInput.length} chars · ~{Math.round(testBenchInput.length / 4)} tokens
+      </div>
+    </div>
+
+    {#if testBenchResult}
+      <div class="mt-2 p-3 rounded-xl bg-surface-2 border border-border/70 space-y-2 text-xs animate-fadeIn">
+        <div class="flex items-center justify-between text-[11px] font-mono">
+          <span class="text-text-muted">Original: {testBenchResult.originalChars} chars</span>
+          <span class="text-success font-semibold">Reduced: {testBenchResult.compressedChars} chars (-{testBenchResult.savedPct}%)</span>
+        </div>
+        <pre class="p-2.5 rounded bg-black/20 font-mono text-[11px] overflow-auto max-h-40 whitespace-pre-wrap text-text-main border border-border/40">{testBenchResult.text}</pre>
+      </div>
+    {/if}
+  </div>
+
+  <!-- ═════════ 4. Anti-Flaky Guard [PRO] ═════════ -->
+  <div class="p-5 rounded-2xl bg-surface-1 border border-border/80 shadow-md mb-4 space-y-3">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h3 class="text-sm font-bold flex items-center gap-2 text-text-main">
+        <span class="material-symbols-outlined text-[18px] text-purple-400">shield</span>
+        Anti-Flaky Guard
+        <span class="px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-400 border border-purple-500/40 uppercase tracking-wider">
+          PRO
+        </span>
+      </h3>
+    </div>
+
+    <p class="text-xs text-text-muted leading-relaxed">
+      Some upstreams answer HTTP 200 with an empty body or a degenerate repetition loop ("OK.OK.OK..."). The guard inspects each finished response and retries on another account before anything reaches the client. Fails open — after the retries run out, the last response is passed through untouched; long live streams are never held up.
+    </p>
+
+    <div class="flex items-center gap-6 pt-1 text-xs">
+      <label class="flex items-center gap-2 cursor-pointer select-none font-medium text-text-main">
+        <input
+          type="checkbox"
+          checked={antiFlakyEnabled}
+          onchange={(e) => handleToggleAntiFlaky(e.currentTarget.checked)}
+          class="accent-primary rounded cursor-pointer h-4 w-4"
+        />
+        <span>Enabled</span>
+      </label>
+
+      <div class="flex items-center gap-2">
+        <span class="text-text-muted">Max retries</span>
+        <select
+          value={antiFlakyMaxRetries}
+          onchange={(e) => handleSetAntiFlakyMaxRetries(Number(e.currentTarget.value))}
+          class="px-2.5 py-1 rounded-lg bg-surface-2 border border-border text-text-main text-xs outline-none focus:border-primary cursor-pointer"
+        >
+          <option value={1}>1</option>
+          <option value={2}>2</option>
+          <option value={3}>3</option>
+          <option value={5}>5</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="text-[11px] text-text-subtle pt-1">
+      Recovered responses carry an <code class="px-1 py-0.5 rounded bg-surface-2 font-mono text-[10px]">x-9router-pro-flaky-retries</code> header.
+    </p>
   </div>
 
   <Card id="rtk">

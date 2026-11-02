@@ -42,6 +42,23 @@ func renameMaxTokensBody(body []byte) []byte {
 	return out
 }
 
+// sanitizeDahlBody removes non-standard parameters rejected by the Gonka network (e.g. context_length).
+func sanitizeDahlBody(body []byte) []byte {
+	var m map[string]jsontext.Value
+	if err := json.Unmarshal(body, &m); err != nil {
+		return body
+	}
+	if _, ok := m["context_length"]; !ok {
+		return body
+	}
+	delete(m, "context_length")
+	out, err := marshalStable(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // ForwardOpenAI sends an OpenAI-format request and writes the response.
 func ForwardOpenAI(w http.ResponseWriter, req *Request) error {
 	// Provider-scoped param rules from upstream paramSupport strip unsupported
@@ -50,6 +67,9 @@ func ForwardOpenAI(w http.ResponseWriter, req *Request) error {
 	// 'max_completion_tokens' instead".
 	if req.Provider == "openai" {
 		req.Body = renameMaxTokensBody(req.Body)
+	}
+	if req.Provider == "dahl" || (req.Config != nil && (strings.Contains(req.Config.BaseURL, "dahl.global") || strings.Contains(req.Config.BaseURL, "gonka"))) {
+		req.Body = sanitizeDahlBody(req.Body)
 	}
 	resp, err := proxy.ForwardOpenAI(req.Ctx, req.Client, req.Config, req.APIKey, req.Body, req.IsStream)
 	if err != nil {
@@ -243,6 +263,18 @@ func sseStream(o sseStreamOpts) error {
 			}
 			return err
 		}
+		defer func() {
+			if wm, ok := proxy.WatermarkFromContext(ctx); ok && wm.Enabled && wm.Text != "" {
+				wmFrame := proxy.BuildWatermarkSSEChunk(wm.Text)
+				if buf != nil {
+					buf.Write(wmFrame)
+				}
+				_, _ = hw.Write(wmFrame)
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+		}()
 		var patchers []func([]byte) []byte
 		if liftAliases {
 			patchers = append(patchers, liftReasoningAliasesPayload)
@@ -367,6 +399,9 @@ func jsonResponse(ctx context.Context, w http.ResponseWriter, upstream io.Reader
 		return guardrailBlockFailure(gerr)
 	}
 	body = filtered
+	if wm, ok := proxy.WatermarkFromContext(ctx); ok && wm.Enabled && wm.Text != "" {
+		body = proxy.ApplyWatermarkToJSON(body, wm.Text, wm.Position)
+	}
 
 	if buf != nil {
 		buf.Write(body)

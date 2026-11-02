@@ -210,6 +210,111 @@
 
   <!-- Bottom Row: Security & Rate Limit Reset -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <!-- Gateway Controls: Stealth, Maintenance, & Watermark (v1.0.1) -->
+    <div class="p-6 rounded-xl bg-surface border border-border space-y-5 shadow-xl col-span-1 lg:col-span-2">
+      <div class="flex items-center justify-between border-b border-border/50 pb-3">
+        <div class="flex items-center gap-2">
+          <Shield class="w-4 h-4 text-brand-400" />
+          <h3 class="font-headline text-sm font-bold text-text-main">Gateway Security & Branding Controls (v1.0.1)</h3>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- 1. Stealth Web UI -->
+        <div class="p-4 rounded-lg bg-bg/50 border border-border/60 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-headline text-xs font-semibold text-text-main">Stealth Base URL</span>
+            <input
+              type="checkbox"
+              checked={!!formData.stealthWebUI}
+              onchange={(e) => (formData.stealthWebUI = e.currentTarget.checked)}
+              class="w-4 h-4 accent-brand-500 cursor-pointer"
+            />
+          </div>
+          <p class="font-body text-xs text-text-muted leading-relaxed">
+            Hides the Web UI dashboard from the base URL (<code>/</code>), returning a silent 404 to general visitors. Only authenticated admin or requests with the secret bypass key can enter.
+          </p>
+          {#if formData.stealthWebUI}
+            <div class="space-y-1">
+              <label class="font-code text-xs text-text-muted">Secret Bypass Key / Query Param:</label>
+              <input
+                type="text"
+                placeholder="e.g. secret_admin (access via ?key=...)"
+                bind:value={formData.stealthBypassKey}
+                class="w-full px-3 py-1.5 rounded bg-bg border border-border font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+              />
+            </div>
+          {/if}
+        </div>
+
+        <!-- 2. Maintenance Mode -->
+        <div class="p-4 rounded-lg bg-bg/50 border border-border/60 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-headline text-xs font-semibold text-text-main">Maintenance Mode</span>
+            <input
+              type="checkbox"
+              checked={!!formData.maintenanceMode}
+              onchange={(e) => (formData.maintenanceMode = e.currentTarget.checked)}
+              class="w-4 h-4 accent-brand-500 cursor-pointer"
+            />
+          </div>
+          <p class="font-body text-xs text-text-muted leading-relaxed">
+            Blocks client inference requests with HTTP 503 Service Unavailable. Admin dashboard and CLI token can still test and verify models.
+          </p>
+          {#if formData.maintenanceMode}
+            <div class="space-y-1">
+              <label class="font-code text-xs text-text-muted">Client Maintenance Message:</label>
+              <input
+                type="text"
+                placeholder="Gateway is under maintenance. Please try again later."
+                bind:value={formData.maintenanceMessage}
+                class="w-full px-3 py-1.5 rounded bg-bg border border-border font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+              />
+            </div>
+          {/if}
+        </div>
+
+        <!-- 3. Model Watermark -->
+        <div class="p-4 rounded-lg bg-bg/50 border border-border/60 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="font-headline text-xs font-semibold text-text-main">Model Watermarking</span>
+            <input
+              type="checkbox"
+              checked={!!formData.watermarkEnabled}
+              onchange={(e) => (formData.watermarkEnabled = e.currentTarget.checked)}
+              class="w-4 h-4 accent-brand-500 cursor-pointer"
+            />
+          </div>
+          <p class="font-body text-xs text-text-muted leading-relaxed">
+            Automatically injects branding, watermark text, or custom footer/header to shared model responses (streaming & non-streaming).
+          </p>
+          {#if formData.watermarkEnabled}
+            <div class="space-y-2">
+              <div>
+                <label class="font-code text-xs text-text-muted">Watermark Text:</label>
+                <input
+                  type="text"
+                  placeholder="\n\n⚡ Served by Galactus AI"
+                  bind:value={formData.watermarkText}
+                  class="w-full px-3 py-1.5 rounded bg-bg border border-border font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div>
+                <label class="font-code text-xs text-text-muted">Position:</label>
+                <select
+                  bind:value={formData.watermarkPosition}
+                  class="w-full px-3 py-1.5 rounded bg-bg border border-border font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+                >
+                  <option value="suffix">Suffix (Footer of response)</option>
+                  <option value="prefix">Prefix (Header of response)</option>
+                </select>
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+
     <!-- Security & Master Access -->
     <div class="p-6 rounded-xl bg-surface border border-border space-y-4 shadow-xl">
       <div class="flex items-center justify-between">
