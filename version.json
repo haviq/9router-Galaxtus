@@ -1,6 +1,6 @@
 {
   "downloadUrl": "https://github.com/haviq/9router-Galaxtus/releases/latest",
-  "latestVersion": "1.0.1",
+  "latestVersion": "1.0.2",
   "sha256": "250ae2ff78c3a981e575b10ba9270168584ede9b7fb83cf4ace49e167523795a",
-  "releaseNotes": "9router Galactus v1.0.1: Stealth Web UI (Base URL Gating), Gateway Maintenance Mode (503), Model Watermarking, and Single-Space Custom Model IDs fix."
+  "releaseNotes": "9router Galactus v1.0.2: Testing update banner notification & UI preview."
 }
