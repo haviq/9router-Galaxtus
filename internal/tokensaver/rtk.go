@@ -517,6 +517,14 @@ func CompressTextDetailedWithCommand(text string, command string, cfg RTKConfig)
 		}
 	}
 
+	// 2.5 AST & Low-Level Code Optimization (RTK++ AST pruner)
+	if strings.Contains(curr, "/*") || strings.Contains(curr, "```") || strings.Contains(curr, "#include") {
+		if pruned, _ := CompressCodeContext(curr); len(pruned) < len(curr) {
+			curr = pruned
+			techniques = append(techniques, "ast-code-prune")
+		}
+	}
+
 	// 3. Smart line truncation if still over maxLines (requires at least SmartTruncMin lines for fallback)
 	lines := strings.Split(curr, "\n")
 	minLinesThreshold := SmartTruncMin

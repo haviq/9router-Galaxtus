@@ -171,6 +171,11 @@
       description: 'Copy a link and paste to your AI to use 9router-go — no install needed',
       icon: 'extension',
     },
+    'connection-logs': {
+      title: 'Connection Logs',
+      description: 'Real-time connection history, live traffic stream, and request details',
+      icon: 'receipt_long',
+    },
     'console-log': {
       title: 'Console Log',
       description: 'Live server console output',
@@ -190,6 +195,11 @@
       title: 'Model Status',
       description: 'Every routable model id with its injection verdict and a live upstream latency probe',
       icon: 'monitor_heart',
+    },
+    'model-evals': {
+      title: 'Model Evaluator',
+      description: 'Diagnostic benchmark across 4 alignment tiers to evaluate uncensored and abliterated capabilities',
+      icon: 'biotech',
     },
     settings: {
       title: 'Settings',

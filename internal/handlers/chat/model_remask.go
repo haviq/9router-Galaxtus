@@ -252,6 +252,32 @@ func MaskResponseJSON(body []byte, rule *db.ModelRemaskRule) []byte {
 		data["model"] = rule.Alias
 	}
 
+	// Cloak provider metadata leaks in usage and root envelope
+	if usage, ok := data["usage"].(map[string]any); ok {
+		delete(usage, "opencode")
+		delete(usage, "openrouter")
+		delete(usage, "deepseek")
+		delete(usage, "billing_source")
+		delete(usage, "cost")
+	}
+	delete(data, "cost")
+	delete(data, "provider")
+	if rule.CloakIdentity {
+		if id, ok := data["id"].(string); ok {
+			if strings.HasPrefix(id, "gen-") || strings.Contains(id, "_") {
+				suffix := id
+				if len(suffix) > 24 {
+					suffix = suffix[len(suffix)-24:]
+				}
+				if strings.HasPrefix(rule.Alias, "claude") {
+					data["id"] = "msg_" + suffix
+				} else {
+					data["id"] = "chatcmpl-" + suffix
+				}
+			}
+		}
+	}
+
 	if choices, ok := data["choices"].([]any); ok {
 		for _, cAny := range choices {
 			if choice, ok := cAny.(map[string]any); ok {
@@ -337,6 +363,38 @@ func MaskSSEChunk(payload []byte, rule *db.ModelRemaskRule) []byte {
 
 	if !changed {
 		return payload
+	}
+	if usage, ok := chunk["usage"].(map[string]any); ok {
+		delete(usage, "opencode")
+		delete(usage, "openrouter")
+		delete(usage, "deepseek")
+		delete(usage, "billing_source")
+		delete(usage, "cost")
+		changed = true
+	}
+	if _, ok := chunk["cost"]; ok {
+		delete(chunk, "cost")
+		changed = true
+	}
+	if _, ok := chunk["provider"]; ok {
+		delete(chunk, "provider")
+		changed = true
+	}
+	if rule.CloakIdentity {
+		if id, ok := chunk["id"].(string); ok {
+			if strings.HasPrefix(id, "gen-") || strings.Contains(id, "_") {
+				suffix := id
+				if len(suffix) > 24 {
+					suffix = suffix[len(suffix)-24:]
+				}
+				if strings.HasPrefix(rule.Alias, "claude") {
+					chunk["id"] = "msg_" + suffix
+				} else {
+					chunk["id"] = "chatcmpl-" + suffix
+				}
+				changed = true
+			}
+		}
 	}
 	b, err := json.Marshal(chunk)
 	if err != nil {

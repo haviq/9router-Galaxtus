@@ -1,6 +1,6 @@
 {
   "downloadUrl": "https://github.com/haviq/9router-Galaxtus/releases/latest",
-  "latestVersion": "1.0.2",
-  "sha256": "250ae2ff78c3a981e575b10ba9270168584ede9b7fb83cf4ace49e167523795a",
-  "releaseNotes": "9router Galactus v1.0.2: Testing update banner notification & UI preview."
+  "latestVersion": "1.0.3",
+  "sha256": "21e6d612d156ab2b1ebb941a6946d187c9b8e23243a77cd836e721258c69a5d3",
+  "releaseNotes": "9router Galactus v1.0.3: Stealth Base URL & Model Remask anti-fingerprint cloaking, Connection Logs, Model Evaluator, and Token Saver AST Pruner."
 }

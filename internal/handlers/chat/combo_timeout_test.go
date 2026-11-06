@@ -215,14 +215,15 @@ func TestComboTimeoutGracePeriod(t *testing.T) {
 				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"healthy response"}}]}`))
 			}))
 			defer healthy.Close()
-			repo := seedComboWithTwoUpstreams(t, "grace-"+strings.ReplaceAll(tc.name, " ", "-"), stalled.URL, healthy.URL, "grace-test")
-			if err := repo.UpdateSettingsRaw(map[string]any{"comboStrategies": map[string]any{"grace-test": tc.settings}}); err != nil {
+			comboName := "grace-" + strings.ReplaceAll(tc.name, " ", "-")
+			repo := seedComboWithTwoUpstreams(t, comboName, stalled.URL, healthy.URL, comboName)
+			if err := repo.UpdateSettingsRaw(map[string]any{"comboStrategies": map[string]any{comboName: tc.settings}}); err != nil {
 				t.Fatal(err)
 			}
 			h := NewChatHandler(repo)
 			for i := 0; i < 2; i++ {
 				req := httptest.NewRequest(http.MethodPost, "/chat/completions",
-					strings.NewReader(`{"model":"grace-test","messages":[{"role":"user","content":"hi"}],"stream":false}`))
+					strings.NewReader(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi %d"}],"stream":false}`, comboName, i)))
 				rec := httptest.NewRecorder()
 				h.HandleChatCompletions(rec, req)
 				if !strings.Contains(rec.Body.String(), "healthy response") {

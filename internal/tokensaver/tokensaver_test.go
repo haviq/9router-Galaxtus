@@ -298,6 +298,49 @@ func TestCompressMessages_ContentArrayNotMapSkip(t *testing.T) {
 	}
 }
 
+func TestPruneHistoricalToolOutputs(t *testing.T) {
+	var verboseOutput strings.Builder
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&verboseOutput, "DEBUG: line %03d of historical tool execution data\n", i)
+	}
+	longOutput := verboseOutput.String()
+
+	// Build a 10-turn conversation:
+	// Turn 0-3: historical (should be pruned)
+	// Turn 4-9: recent working context (should remain untouched if within keepRecent)
+	var messages []map[string]any
+	for i := 0; i < 10; i++ {
+		if i%2 == 0 {
+			messages = append(messages, map[string]any{
+				"role":    "user",
+				"content": fmt.Sprintf("turn %d question", i),
+			})
+		} else {
+			messages = append(messages, map[string]any{
+				"role":    "tool",
+				"name":    "bash",
+				"content": longOutput,
+			})
+		}
+	}
+
+	modified := PruneHistoricalToolOutputs(messages, 6)
+	if !modified {
+		t.Fatal("expected historical tool outputs to be pruned")
+	}
+
+	// Turn 1 (index 1) is historical (1 < 10 - 6 = 4) -> must be pruned
+	oldTool := messages[1]["content"].(string)
+	assertContains(t, oldTool, "9router Context Pruner")
+
+	// Turn 7 and 9 (indices 7 and 9) are recent (>= 4) -> must NOT be pruned by historical pruner
+	recentTool := messages[7]["content"].(string)
+	if strings.Contains(recentTool, "9router Context Pruner") {
+		t.Fatal("recent turn 7 was incorrectly pruned by historical pruner")
+	}
+}
+
+
 func TestCompressMessages_InputOnlyMessagesFallback(t *testing.T) {
 	diff := longGitDiff()
 	// messages key missing, input key used

@@ -52,18 +52,18 @@ func TestZenRelayPath(t *testing.T) {
 			want:  "/zen/v1/responses",
 		},
 		{
-			name:  "a free-tier model carries the inference prefix",
+			name:  "a free-tier model carries the zen prefix",
 			heads: map[string]string{"x-relay-target": "https://opencode.ai"},
 			model: "deepseek-v4-flash-free",
 			lane:  "/chat/completions",
-			want:  "/inference/openai/v1/chat/completions",
+			want:  "/zen/v1/chat/completions",
 		},
 		{
-			name:  "a free-tier responses model carries the inference prefix",
+			name:  "a free-tier responses model carries the zen prefix",
 			heads: map[string]string{"x-relay-target": "https://opencode.ai"},
 			model: "muse-spark-1.3-contributor-free",
 			lane:  zenResponsesPath,
-			want:  "/inference/openai/v1/responses",
+			want:  "/zen/v1/responses",
 		},
 		{
 			name:  "a free-tier messages model keeps the legacy inference prefix",

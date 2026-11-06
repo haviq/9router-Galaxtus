@@ -47,3 +47,19 @@ func TestStreamContentPeeker_ZeroContentReturnsError(t *testing.T) {
 		t.Fatalf("zero-content stream should not have committed any body to underlying recorder")
 	}
 }
+
+func TestStreamContentPeeker_RefusalInterceptionReturnsError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	peeker := NewStreamContentPeeker(rec)
+
+	// Refusal chunk
+	_, _ = peeker.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"I apologize, but I cannot fulfill this request as an AI language model.\"}}]}\n\n"))
+
+	err := peeker.Finish()
+	if !errors.Is(err, ErrRefusalDetected) {
+		t.Fatalf("expected ErrRefusalDetected, got %v", err)
+	}
+	if rec.Body.Len() > 0 {
+		t.Fatalf("refusal stream should not have committed to client ResponseWriter")
+	}
+}

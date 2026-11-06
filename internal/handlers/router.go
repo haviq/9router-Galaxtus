@@ -279,6 +279,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/jailbreak/preview", dashH.HandlePreviewJailbreak)
 	r.Put("/api/jailbreak/presets/order", dashH.HandleReorderJailbreakPresets)
 	r.Post("/api/jailbreak/presets/upload", dashH.HandleUploadJailbreakPreset)
+	r.Post("/api/security/binary-lint", dashH.HandleBinaryLint)
 
 	r.Get("/api/provider-nodes", dashH.HandleGetProviderNodes)
 	r.Post("/api/provider-nodes", dashH.HandleCreateProviderNode)
@@ -542,19 +543,23 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// Version info is public (upstream PUBLIC_API_PATHS): the Sidebar polls
 	// /api/version on every dashboard page including /login, before any
 	// session or API key exists.
+	// Version and callback endpoints are protected by StealthWebUIGate when Stealth mode is active.
 	versionH := chat.NewChatHandler(repo, ts)
-	r.Get("/version", versionH.HandleVersion)
-	r.Get("/api/version", versionH.HandleVersion)
-	r.Get("/api/version/status", versionH.HandleVersionStatus)
-	r.Get("/api/version/check", versionH.HandleCheckUpdate)
+	gateHandler := func(h http.HandlerFunc) http.HandlerFunc {
+		return middleware.StealthWebUIGate(repo, h).ServeHTTP
+	}
+	r.Get("/version", gateHandler(versionH.HandleVersion))
+	r.Get("/api/version", gateHandler(versionH.HandleVersion))
+	r.Get("/api/version/status", gateHandler(versionH.HandleVersionStatus))
+	r.Get("/api/version/check", gateHandler(versionH.HandleCheckUpdate))
 	// Embedded Native Dashboard SPA
 	webH := middleware.StealthWebUIGate(repo, web.Handler())
 	oauthH := oauth.NewOAuthHandler(repo)
 	// Public OAuth landing page: providers redirect browsers here after login.
 	// Browsers carry neither the dashboard session nor the engine API key.
-	r.Get("/callback", oauthH.HandleCallbackPage)
+	r.Get("/callback", gateHandler(oauthH.HandleCallbackPage))
 	quickSyncDashH := dashboard.NewDashboardHandler(repo, ts)
-	r.HandleFunc("/api/providers/deepseek-web/quick-sync", quickSyncDashH.HandleDeepSeekWebQuickSync)
+	r.HandleFunc("/api/providers/deepseek-web/quick-sync", gateHandler(quickSyncDashH.HandleDeepSeekWebQuickSync))
 	r.Get("/", webH.ServeHTTP)
 	r.Get("/login", webH.ServeHTTP)
 	r.Get("/portal", webH.ServeHTTP)
@@ -709,6 +714,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		r.Get("/batches/{batch_id}", batchH.HandleGetBatch)
 		r.Post("/v1/batches/{batch_id}/cancel", batchH.HandleCancelBatch)
 		r.Post("/batches/{batch_id}/cancel", batchH.HandleCancelBatch)
+
+		// Low-level binary & shellcode sanitizer co-processor
+		securityDashH := dashboard.NewDashboardHandler(repo, ts)
+		r.Post("/v1/security/binary-lint", securityDashH.HandleBinaryLint)
+		r.Post("/security/binary-lint", securityDashH.HandleBinaryLint)
 	})
 
 	// The provider gate (docs/provider-limits-plan.md) reads the same limiter

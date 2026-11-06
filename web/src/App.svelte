@@ -35,9 +35,11 @@
   import type { SystemVersionInfo } from './api/client'
   import Toasts from './lib/ui/Toasts.svelte'
   import TerminalView from './components/TerminalView.svelte'
+  import ConnectionLogsView from './components/ConnectionLogsView.svelte'
   import TokenSaverView from './components/TokenSaverView.svelte'
   import JailbreakView from './components/JailbreakView.svelte'
   import ModelStatusView from './components/ModelStatusView.svelte'
+  import ModelEvalsView from './components/ModelEvalsView.svelte'
   import HttpRewriteView from './components/HttpRewriteView.svelte'
   import PlaygroundView from './components/PlaygroundView.svelte'
   import ModelRemaskView from './components/remask/ModelRemaskView.svelte'
@@ -299,6 +301,10 @@
     'media-web': { title: 'Web Fetch & Search', description: 'Configure web search and scrape tools' },
     'proxy-pools': { title: 'Proxy Pools', description: 'Manage your proxy pool configurations' },
     skills: { title: 'Agent Skills', description: 'Copy a link and paste to your AI to use 9router-go — no install needed' },
+    'connection-logs': {
+      title: 'Connection Logs',
+      description: 'Real-time connection history, live traffic stream, and request details',
+    },
     'console-log': { title: 'Console Log', description: 'Live server console output' },
     terminal: { title: 'Console Log', description: 'Live server console output' },
     settings: { title: 'Settings', description: 'Manage your preferences and configuration' },
@@ -623,6 +629,8 @@
               <ProxyPoolsView />
             {:else if activeTab === 'skills'}
               <SkillsView />
+            {:else if activeTab === 'connection-logs'}
+              <ConnectionLogsView {connections} {providerNodes} />
             {:else if activeTab === 'console-log' || activeTab === 'terminal'}
               <TerminalView />
             {:else if activeTab === 'settings'}
@@ -635,6 +643,8 @@
               <JailbreakView />
             {:else if activeTab === 'model-status'}
               <ModelStatusView />
+            {:else if activeTab === 'model-evals'}
+              <ModelEvalsView />
             {:else if activeTab === 'playground'}
               <PlaygroundView />
             {:else if activeTab === 'http-rewrite'}

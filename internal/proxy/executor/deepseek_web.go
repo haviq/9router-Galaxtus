@@ -66,11 +66,13 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 		ctx = context.Background()
 	}
 
-	userToken := deepSeekUserToken(req.APIKey)
-	if userToken == "" {
+	candidates := ParseDeepSeekTokens(req.APIKey)
+	if len(candidates) == 0 {
 		return deepSeekFailure(http.StatusBadRequest,
 			"deepseek-web needs a userToken — paste the value from chat.deepseek.com DevTools → Application → Local Storage → userToken")
 	}
+	userToken := globalDeepSeekPool.PickToken(candidates)
+	defer globalDeepSeekPool.ReleaseToken(userToken)
 	if len(envelope.Messages) == 0 {
 		return deepSeekFailure(http.StatusBadRequest, "deepseek-web received an empty messages array")
 	}
@@ -97,6 +99,7 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 	// window is what keeps the next turn out of this one's breath.
 	release, err := deepSeekGates.acquire(ctx, userToken, stealth.maxConcurrency, deepSeekStealthQueueWait)
 	if err != nil {
+		globalDeepSeekPool.QuarantineToken(userToken, 45*time.Second)
 		return deepSeekFailure(http.StatusTooManyRequests, "deepseek-web: "+err.Error())
 	}
 	defer deepSeekReleaseAfterTurn(release, stealth.callGap)

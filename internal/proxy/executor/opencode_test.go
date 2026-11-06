@@ -288,8 +288,8 @@ func TestForwardOpencode(t *testing.T) {
 		if !strings.HasPrefix(r.Header.Get("x-opencode-session"), "ses_") {
 			t.Errorf("expected ses_ prefix on x-opencode-session, got %s", r.Header.Get("x-opencode-session"))
 		}
-		if r.Header.Get("x-opencode-request") != "" {
-			t.Errorf("v2 request must omit x-opencode-request, got %q", r.Header.Get("x-opencode-request"))
+		if !strings.HasPrefix(r.Header.Get("x-opencode-request"), "msg_") {
+			t.Errorf("expected msg_ prefix on x-opencode-request, got %s", r.Header.Get("x-opencode-request"))
 		}
 		if r.Header.Get("x-opencode-session-id") != r.Header.Get("x-opencode-session") || r.Header.Get("x-session-affinity") != r.Header.Get("x-opencode-session") || r.Header.Get("x-session-id") != r.Header.Get("x-opencode-session") {
 			t.Errorf("session affinity headers do not match: %#v", r.Header)
@@ -522,8 +522,8 @@ func TestForwardOpencodeGo_OpenAIRouting(t *testing.T) {
 
 func TestForwardOpencode_MuseSparkResponsesRouting(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/inference/openai/v1/responses") {
-			t.Errorf("expected the zen base to be rewritten to the inference gate, got %s", r.URL.Path)
+		if !strings.HasSuffix(r.URL.Path, "/zen/v1/responses") && !strings.HasSuffix(r.URL.Path, "/inference/openai/v1/responses") {
+			t.Errorf("expected the zen responses route, got %s", r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
 		var parsed map[string]any
@@ -596,13 +596,13 @@ func TestForwardOpencode_MuseSpark13_ResponsesRouting(t *testing.T) {
 
 func TestOpenCodeInferenceBase(t *testing.T) {
 	tests := []struct{ input, want string }{
-		{"https://opencode.ai/zen/v1/chat/completions", "https://opencode.ai/inference/openai/v1"},
-		{"https://opencode.ai/zen/v1", "https://opencode.ai/inference/openai/v1"},
-		{"http://127.0.0.1:9000/zen/v1/chat/completions", "http://127.0.0.1:9000/inference/openai/v1"},
+		{"https://opencode.ai/zen/v1/chat/completions", "https://opencode.ai/zen/v1"},
+		{"https://opencode.ai/zen/v1", "https://opencode.ai/zen/v1"},
+		{"http://127.0.0.1:9000/zen/v1/chat/completions", "http://127.0.0.1:9000/zen/v1"},
 		{"http://127.0.0.1:9000", "http://127.0.0.1:9000"},
 		{"https://relay.example/api", "https://relay.example/api"},
-		{"https://opencode.ai/inference/openai/v1", "https://opencode.ai/inference/openai/v1"},
-		{"https://opencode.ai/inference/v1", "https://opencode.ai/inference/openai/v1"},
+		{"https://opencode.ai/inference/openai/v1", "https://opencode.ai/zen/v1"},
+		{"https://opencode.ai/inference/v1", "https://opencode.ai/zen/v1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

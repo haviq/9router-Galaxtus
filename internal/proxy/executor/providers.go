@@ -720,6 +720,13 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 		}
 	}
 
+	// Apply OpenCode Zen Free Tier Contract patch:
+	// - Inject stub tools "bash" and "read"
+	// - Strip tool_choice: "none"
+	// - Clamp reasoning_effort: "xhigh" -> "high"
+	// - Ensure stream: true
+	body = proxy.PatchOpenCodePayload(body)
+
 	cfg := *req.Config
 	if isRelayConfig(&cfg) {
 		cfg.StaticHeaders = copyHeaders(cfg.StaticHeaders)
@@ -767,11 +774,7 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 	return jsonResponse(req.Ctx, w, bytes.NewReader(data), req.TranslateResp, req.ResponseBuf)
 }
 
-// opencodeInferenceBase rewrites a zen-layout base URL to the v2 inference
-// gate's /inference/openai/v1 prefix. Any host mirroring the zen layout follows the
-// same migration, so the rewrite keys off the prefix rather than the host. A
-// base with no zen prefix — a custom endpoint, or the registry default that
-// already points at /inference/openai/v1 — is returned untouched.
+// opencodeInferenceBase normalizes a base URL to the canonical OpenCode Zen prefix (/zen/v1).
 func opencodeInferenceBase(base string) string {
 	base = strings.TrimRight(base, "/")
 	base = strings.TrimSuffix(base, "/chat/completions")
@@ -779,11 +782,11 @@ func opencodeInferenceBase(base string) string {
 	base = strings.TrimSuffix(base, "/responses")
 	switch {
 	case strings.HasSuffix(base, "/zen/v1"):
-		return strings.TrimSuffix(base, "/zen/v1") + "/inference/openai/v1"
-	case strings.HasSuffix(base, "/inference/openai/v1"):
 		return base
+	case strings.HasSuffix(base, "/inference/openai/v1"):
+		return strings.TrimSuffix(base, "/inference/openai/v1") + "/zen/v1"
 	case strings.HasSuffix(base, "/inference/v1"):
-		return strings.TrimSuffix(base, "/inference/v1") + "/inference/openai/v1"
+		return strings.TrimSuffix(base, "/inference/v1") + "/zen/v1"
 	default:
 		return base
 	}
@@ -818,10 +821,13 @@ func opencodeChatURL(base string) string {
 	}
 	trimmed := strings.TrimSuffix(base, "/chat/completions")
 	if strings.HasSuffix(trimmed, "/zen/v1") {
-		return strings.TrimSuffix(trimmed, "/zen/v1") + "/inference/openai/v1/chat/completions"
+		return base
+	}
+	if strings.HasSuffix(trimmed, "/inference/openai/v1") {
+		return strings.TrimSuffix(trimmed, "/inference/openai/v1") + "/zen/v1/chat/completions"
 	}
 	if strings.HasSuffix(trimmed, "/inference/v1") {
-		return strings.TrimSuffix(trimmed, "/inference/v1") + "/inference/openai/v1/chat/completions"
+		return strings.TrimSuffix(trimmed, "/inference/v1") + "/zen/v1/chat/completions"
 	}
 	return base
 }

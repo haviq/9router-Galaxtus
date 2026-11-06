@@ -232,7 +232,7 @@ func zenFreePrefix(lanePath string) string {
 	if lanePath == zenMessagesPath {
 		return "/inference/v1"
 	}
-	return "/inference/openai/v1"
+	return "/zen/v1"
 }
 
 // zenRelayPath reports the path an edge relay should forward to for a Zen lane.
@@ -301,6 +301,9 @@ func forwardZenChat(w http.ResponseWriter, req *Request, cleanModel, sourceForma
 
 	// Upstream rejects stream:false on the free-tier gate even for a keyed lane.
 	body = withJSONFields(body, map[string]any{"stream": true, "model": cleanModel})
+	if free {
+		body = proxy.PatchOpenCodePayload(body)
+	}
 
 	cfg := *req.Config
 	if isRelayConfig(&cfg) {

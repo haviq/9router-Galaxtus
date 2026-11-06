@@ -383,6 +383,13 @@ func CompressMessagesWithConfig(body []byte, cfg RTKConfig) ([]byte, bool) {
 		}
 	}
 
+	// Historical Turn Pruner:
+	// For deep multi-turn sessions (> 6 messages), compact bloated tool outputs
+	// in older turns while keeping the active working window (recent 6 turns) intact.
+	if PruneHistoricalToolOutputs(items, 6) {
+		compressed = true
+	}
+
 	if !compressed {
 		return body, false
 	}
@@ -512,3 +519,143 @@ func smartTruncate(s string) string {
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }
+
+// PruneHistoricalToolOutputs inspects multi-turn conversation arrays and compacts
+// bloated tool result outputs in older turns (beyond keepRecent) while preserving
+// the working context in the most recent turns.
+func PruneHistoricalToolOutputs(items []map[string]any, keepRecent int) bool {
+	if keepRecent <= 0 {
+		keepRecent = 6
+	}
+	if len(items) <= keepRecent {
+		return false
+	}
+
+	cutoff := len(items) - keepRecent
+	modified := false
+
+	for i := 0; i < cutoff; i++ {
+		msg := items[i]
+
+		// 1. OpenAI Responses: function_call_output
+		if msg["type"] == "function_call_output" {
+			if out, ok := msg["output"].(string); ok && len(out) > 600 {
+				if pruned := PruneHistoricalText(out); pruned != out {
+					msg["output"] = pruned
+					modified = true
+				}
+			} else if outArr, ok := msg["output"].([]any); ok {
+				for _, part := range outArr {
+					if partMap, ok := part.(map[string]any); ok {
+						if t, _ := partMap["type"].(string); t == "text" || t == "input_text" {
+							if text, ok := partMap["text"].(string); ok && len(text) > 600 {
+								if pruned := PruneHistoricalText(text); pruned != text {
+									partMap["text"] = pruned
+									modified = true
+								}
+							}
+						}
+					}
+				}
+			}
+			continue
+		}
+
+		// 2. OpenAI tool role message
+		if msg["role"] == "tool" {
+			if content, ok := msg["content"].(string); ok && len(content) > 600 {
+				if pruned := PruneHistoricalText(content); pruned != content {
+					msg["content"] = pruned
+					modified = true
+				}
+			} else if contentArr, ok := msg["content"].([]any); ok {
+				for _, part := range contentArr {
+					if partMap, ok := part.(map[string]any); ok {
+						if t, _ := partMap["type"].(string); t == "text" {
+							if text, ok := partMap["text"].(string); ok && len(text) > 600 {
+								if pruned := PruneHistoricalText(text); pruned != text {
+									partMap["text"] = pruned
+									modified = true
+								}
+							}
+						}
+					}
+				}
+			}
+			continue
+		}
+
+		// 3. Claude tool_result in content array
+		if contentArr, ok := msg["content"].([]any); ok {
+			for _, part := range contentArr {
+				if block, ok := part.(map[string]any); ok && block["type"] == "tool_result" {
+					if text, ok := block["text"].(string); ok && len(text) > 600 {
+						if pruned := PruneHistoricalText(text); pruned != text {
+							block["text"] = pruned
+							modified = true
+						}
+					}
+					if content, ok := block["content"].(string); ok && len(content) > 600 {
+						if pruned := PruneHistoricalText(content); pruned != content {
+							block["content"] = pruned
+							modified = true
+						}
+					} else if innerArr, ok := block["content"].([]any); ok {
+						for _, inner := range innerArr {
+							if innerBlock, ok := inner.(map[string]any); ok && innerBlock["type"] == "text" {
+								if text, ok := innerBlock["text"].(string); ok && len(text) > 600 {
+									if pruned := PruneHistoricalText(text); pruned != text {
+										innerBlock["text"] = pruned
+										modified = true
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return modified
+}
+
+// PruneHistoricalText truncates the middle of older tool outputs while preserving the head and tail,
+// and applies AST code pruning if structured code is present.
+func PruneHistoricalText(s string) string {
+	if len(s) <= 600 {
+		return s
+	}
+
+	// First pass: if it has code blocks or structs, compact them with AST pruner
+	if strings.Contains(s, "```") || strings.Contains(s, "struct ") || strings.Contains(s, "#include") {
+		if pruned, _ := CompressCodeContext(s); len(pruned) < len(s) {
+			s = pruned
+		}
+	}
+
+	lines := strings.Split(s, "\n")
+	if len(lines) <= 25 {
+		if len(s) > 1500 {
+			// Long single line or few lines: trim characters
+			head := s[:400]
+			tail := s[len(s)-200:]
+			return head + "\n... [historical output truncated] ...\n" + tail
+		}
+		return s
+	}
+
+	headLines := 12
+	tailLines := 6
+	if headLines+tailLines >= len(lines) {
+		return s
+	}
+
+	dropped := len(lines) - (headLines + tailLines)
+	result := make([]string, 0, headLines+tailLines+1)
+	result = append(result, lines[:headLines]...)
+	result = append(result, fmt.Sprintf("... [9router Context Pruner: %d lines compacted from historical turn] ...", dropped))
+	result = append(result, lines[len(lines)-tailLines:]...)
+	return strings.Join(result, "\n")
+}
+

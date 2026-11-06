@@ -24,10 +24,10 @@ func TestBuildOpenCodeHeaders(t *testing.T) {
 	if len(headers["x-opencode-session"]) != 30 {
 		t.Errorf("expected session length 30, got %d (%s)", len(headers["x-opencode-session"]), headers["x-opencode-session"])
 	}
-	if headers["x-opencode-request"] != "" {
-		t.Errorf("v2 fingerprint must omit x-opencode-request, got %q", headers["x-opencode-request"])
+	if !proxy.OpenCodeRequestRegex.MatchString(headers["x-opencode-request"]) {
+		t.Errorf("expected canonical x-opencode-request matching regex, got %s", headers["x-opencode-request"])
 	}
-	for _, key := range []string{"x-opencode-session-id", "x-session-affinity", "x-session-id"} {
+	for _, key := range []string{"x-opencode-session-id", "x-session-affinity", "x-session-id", "X-Session-Id"} {
 		if headers[key] != headers["x-opencode-session"] {
 			t.Errorf("%s = %q, want session %q", key, headers[key], headers["x-opencode-session"])
 		}
@@ -49,7 +49,7 @@ func TestBuildOpenCodeHeaders_SessionHintMirrorsEverywhere(t *testing.T) {
 	t.Run("canonical hint", func(t *testing.T) {
 		hint := "ses_f52b0d414ffeObbCKcHUQYZR2I"
 		headers := proxy.BuildOpenCodeHeaders(map[string]string{"x-opencode-session": hint}, "", true)
-		for _, key := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "x-session-id"} {
+		for _, key := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "x-session-id", "X-Session-Id"} {
 			if headers[key] != hint {
 				t.Errorf("%s = %q, want the downstream hint %q", key, headers[key], hint)
 			}
@@ -58,7 +58,7 @@ func TestBuildOpenCodeHeaders_SessionHintMirrorsEverywhere(t *testing.T) {
 	t.Run("foreign hint is translated once and mirrored", func(t *testing.T) {
 		headers := proxy.BuildOpenCodeHeaders(map[string]string{"x-opencode-session": "uuid-1234"}, "", true)
 		want := proxy.TranslateOpenCodeSessionID("uuid-1234", "")
-		for _, key := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "x-session-id"} {
+		for _, key := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "x-session-id", "X-Session-Id"} {
 			if headers[key] != want {
 				t.Errorf("%s = %q, want %q", key, headers[key], want)
 			}

@@ -561,6 +561,11 @@ func (h *ChatHandler) handleComboFallback(ctx context.Context, w http.ResponseWr
 	// combo models must not re-select them (same account = same 429 quota).
 	var excludeIDs []string
 
+	if strategy == "speculative" && len(comboModels) >= 2 {
+		h.handleSpeculative(ctx, w, body, comboModels, isStream, translateResponse, comboName)
+		return
+	}
+
 	// 1. Apply combo rotation strategy first. The smart strategy orders the
 	// models itself (System One evaluation + session stickiness) and carries
 	// its routing state on the context for the failure loop below.
@@ -751,6 +756,11 @@ func (h *ChatHandler) handleComboFallback(ctx context.Context, w http.ResponseWr
 						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: []byte(`{"error":{"message":"streaming zero content"}}`)}
 						break
 					}
+					if errors.Is(fwdErr, internalproxy.ErrRefusalDetected) {
+						log.Warn("combo", "refusal detected on candidate model, auto-failing over to next candidate", "provider", modelInfo.Provider, "model", modelInfo.Model)
+						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: []byte(`{"error":{"message":"upstream model refusal intercepted"}}`)}
+						break
+					}
 					var zcErr *internalproxy.ZeroContentError
 					if errors.As(fwdErr, &zcErr) {
 						log.Warn("combo", "zero usable content, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
@@ -916,6 +926,12 @@ func (h *ChatHandler) handleMessagesComboFallback(ctx context.Context, w http.Re
 	// Connections that failed with a retryable status this request; remaining
 	// combo models must not re-select them (same account = same 429 quota).
 	var excludeIDs []string
+
+	if strategy == "speculative" && len(comboModels) >= 2 {
+		h.handleSpeculative(ctx, w, bodyJSON, comboModels, isStream, false, comboName)
+		return
+	}
+
 	var models []string
 	if strategy == "smart" {
 		ctx, models = h.applySmartRouting(ctx, bodyJSON, comboModels, comboName)
@@ -1072,6 +1088,11 @@ func (h *ChatHandler) handleMessagesComboFallback(ctx context.Context, w http.Re
 					if errors.Is(fwdErr, internalproxy.ErrStreamingZeroContent) {
 						log.Warn("combo", "streaming zero content, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
 						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: []byte(`{"error":{"message":"streaming zero content"}}`)}
+						break
+					}
+					if errors.Is(fwdErr, internalproxy.ErrRefusalDetected) {
+						log.Warn("combo", "refusal detected on candidate model, auto-failing over to next candidate", "provider", modelInfo.Provider, "model", modelInfo.Model)
+						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: []byte(`{"error":{"message":"upstream model refusal intercepted"}}`)}
 						break
 					}
 					var zcErr *internalproxy.ZeroContentError

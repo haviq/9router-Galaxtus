@@ -81,6 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { kind: 'link', id: 'analytics', label: 'Usage', icon: 'bar_chart' },
       { kind: 'link', id: 'quota', label: 'Quota Tracker', icon: 'data_usage' },
       { kind: 'link', id: 'model-status', label: 'Model Status', icon: 'monitor_heart' },
+      { kind: 'link', id: 'model-evals', label: 'Model Evaluator', icon: 'biotech' },
       { kind: 'link', id: 'token-saver', label: 'Token Saver', icon: 'savings' },
       { kind: 'link', id: 'http-rewrite', label: 'HTTP Rewrite', icon: 'alt_route' },
       { kind: 'link', id: 'cli-tools', label: 'CLI Tools', icon: 'terminal' },
@@ -110,6 +111,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { kind: 'link', id: 'security', label: 'Security', icon: 'shield_lock' },
       { kind: 'link', id: 'jailbreak', label: 'Prompt Injection', icon: 'masks' },
       PLANS_LINK,
+      { kind: 'link', id: 'connection-logs', label: 'Connection Logs', icon: 'receipt_long' },
       // Console Log and Settings sit last on purpose: they are the two entries
       // an operator reaches for after everything else, and Settings is the one
       // entry that must never disappear — so it is the final row, out of the
@@ -189,7 +191,7 @@ export const NAV_PRESETS: NavPresetDef[] = [
     hint: 'No media surfaces, no CLI, Skills or console tooling',
     visible: NAV_ORDER.filter(
       (id) =>
-        !['media-providers', 'cli-tools', 'skills', 'console-log', 'plans'].includes(id)
+        !['media-providers', 'cli-tools', 'skills', 'console-log', 'connection-logs', 'plans', 'model-evals'].includes(id)
     ),
   },
   {

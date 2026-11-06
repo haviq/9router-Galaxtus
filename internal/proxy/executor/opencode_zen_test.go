@@ -447,8 +447,8 @@ func TestForwardOpencodeZen_FreeModelTakesInferenceGate(t *testing.T) {
 		want  string
 		reply func(w http.ResponseWriter)
 	}{
-		{"deepseek-v4-flash-free", "/inference/openai/v1/chat/completions", zenChatReply},
-		{"muse-spark-1.3-contributor-free", "/inference/openai/v1/responses", zenResponsesReply},
+		{"deepseek-v4-flash-free", "/zen/v1/chat/completions", zenChatReply},
+		{"muse-spark-1.3-contributor-free", "/zen/v1/responses", zenResponsesReply},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {

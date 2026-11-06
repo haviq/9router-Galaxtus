@@ -119,10 +119,10 @@
   let copiedId = $state<string | null>(null)
 
   // Unauthenticated Landing Section Switcher
-  let landingTab = $state<'signin' | 'privacy' | 'compliance'>('signin')
+  let landingTab = $state<'signin'>('signin')
 
   // Authenticated Console Navigation Tabs
-  let activeMainTab = $state<'telemetry' | 'playground' | 'guides' | 'tariffs' | 'trust'>('telemetry')
+  let activeMainTab = $state<'telemetry' | 'playground' | 'guides' | 'tariffs'>('telemetry')
   let activeGuideTab = $state<'cursor' | 'cline' | 'windsurf' | 'python' | 'curl'>('cursor')
 
   // Top-Up Modal & Payment Flow State
@@ -191,7 +191,6 @@
     { path: '/workbench', label: '/workbench', badge: 'Developer', desc: 'Anthropic/OpenAI style Prompt Workbench URL' },
     { path: '/studio', label: '/studio', badge: 'AI Studio', desc: 'Clean AI Studio endpoint for engineering teams' },
     { path: '/workspace', label: '/workspace', badge: 'Team', desc: 'Enterprise organization workspace URL' },
-    { path: '/trust', label: '/trust', badge: 'Compliance', desc: 'Direct link to Privacy & Regulatory Trust Center' },
     { path: '/portal', label: '/portal', badge: 'Legacy', desc: 'Backward-compatible legacy client portal route' }
   ] as const
 
@@ -210,168 +209,7 @@
     if (typeof window !== 'undefined' && window.location.pathname !== path) {
       window.history.replaceState({ tab: 'portal' }, '', path)
     }
-    if (path === '/trust') {
-      if (clientInfo) {
-        activeMainTab = 'trust'
-      } else {
-        landingTab = 'compliance'
-      }
-    }
   }
-
-  // Interactive Enterprise Legal / Regulation Dossier Modal
-  type PolicyDocId = 'zdr' | 'dpa' | 'uupdp' | 'security' | 'sla' | null
-  let activePolicyModal = $state<PolicyDocId>(null)
-
-  const POLICY_DOCS: Record<
-    Exclude<PolicyDocId, null>,
-    { title: string; subtitle: string; code: string; clauses: Array<{ heading: string; body: string }> }
-  > = {
-    zdr: {
-      title: 'Zero-Data Retention (ZDR) & Privacy Policy',
-      subtitle: 'Cryptographic Ephemeral Inference Guarantee • Effective 2026',
-      code: 'GALACTUS-POL-ZDR-4.2',
-      clauses: [
-        {
-          heading: '1. Zero Model Training Guarantee',
-          body: '9router Galactus strictly prohibits the use of customer prompts, system instructions, embeddings, or model completions for training, fine-tuning, or evaluating any foundation model weights.'
-        },
-        {
-          heading: '2. Volatile RAM-Only Streaming Pipeline',
-          body: 'Inference payloads are processed exclusively in volatile memory buffers during active Server-Sent Events (SSE) transmission. Upon stream termination ([DONE]), payload buffers are zeroed out and released immediately.'
-        },
-        {
-          heading: '3. Metadata-Only Telemetry Ledger',
-          body: 'The Client Console records only non-content operational telemetry (timestamp, remasked model ID, token count, latency, and HTTP status code) required for billing accuracy and rate-limit enforcement.'
-        },
-        {
-          heading: '4. Automated PII & Credential Scrubbing',
-          body: 'Edge guardrails inspect outbound payloads prior to upstream transit to redact accidental exposure of bearer tokens, private cryptographic keys, NIK/KTP identifiers, and payment card numbers.'
-        }
-      ]
-    },
-    dpa: {
-      title: 'Enterprise Data Processing Addendum (DPA)',
-      subtitle: 'GDPR Art. 28, ISO/IEC 27701 & Cross-Border Sovereign Transit',
-      code: 'GALACTUS-DPA-2026-EU',
-      clauses: [
-        {
-          heading: '1. Role of the Parties (Controller vs. Processor)',
-          body: 'The Customer acts as the Data Controller (or Pengendali Data Pribadi), and 9router Galactus operates strictly as a zero-persistence Data Processor routing encrypted API calls to designated inference nodes.'
-        },
-        {
-          heading: '2. Sub-Processor Isolation & Anti-Leak Remasking',
-          body: 'Before any request leaves the Galactus edge router, organization headers, caller IP addresses, User-Agent strings, and upstream model identifiers are stripped and replaced with standardized enterprise proxy signatures.'
-        },
-        {
-          heading: '3. Cryptographic Right to Erasure',
-          body: 'Because prompt and completion bodies are never persisted to disk, customer data erasure is instantaneous by architecture. Revoking an API key immediately terminates all associated session state.'
-        }
-      ]
-    },
-    uupdp: {
-      title: 'Kepatuhan Regulasi Indonesia (UU PDP No. 27 Tahun 2022) & Global',
-      subtitle: 'Standar Perlindungan Data Pribadi Nasional, SOC 2 Type II & ISO/IEC 42001',
-      code: 'GALACTUS-REG-ID-27/2022',
-      clauses: [
-        {
-          heading: '1. Kepatuhan UU No. 27 Tahun 2022 (UU PDP Indonesia)',
-          body: 'Memenuhi Pasal 35 & Pasal 39 UU PDP terkait kewajiban keamanan pemrosesan data melalui enkripsi TLS 1.3 end-to-end, penyimpanan kredensial terenkripsi AES-256-GCM, serta prinsip pemrosesan tanpa penyimpanan konten (Zero-Data Retention).'
-        },
-        {
-          heading: '2. Sertifikasi Standar Keamanan & AI Internasional',
-          body: 'Arsitektur gateway dirancang mengikuti kontrol teknis SOC 2 Type II (Security, Availability, Confidentiality), ISO/IEC 27001:2022 (Information Security), dan ISO/IEC 42001:2023 (Artificial Intelligence Management System).'
-        },
-        {
-          heading: '3. Kedaulatan Data & Audit Trail Real-Time',
-          body: 'Setiap eksekusi API memiliki jejak audit deterministik (waktu eksekusi, kuota token, kebijakan konkurensi, dan daftar putih IP) yang dapat diverifikasi secara mandiri oleh pemilik API key melalui konsol ini.'
-        }
-      ]
-    },
-    security: {
-      title: 'Anti-Leak Model Remasking & Cryptographic Architecture',
-      subtitle: 'Defense-in-Depth Gateway Security Specification',
-      code: 'GALACTUS-SEC-ARCH-9.1',
-      clauses: [
-        {
-          heading: '1. Bidirectional Model Identity Remasking',
-          body: 'Rewrites model names in both request payloads and SSE response chunks, including deep packet inspection of system fingerprints and reasoning blocks, preventing upstream model identity leakage.'
-        },
-        {
-          heading: '2. Master Vault Credential Encryption',
-          body: 'Upstream provider credentials and OAuth tokens are encrypted at rest using authenticated AES-256-GCM ciphertexts keyed by the operator master key.'
-        },
-        {
-          heading: '3. Per-Key IP Allowlisting & Rate Governance',
-          body: 'Each client bearer token supports strict CIDR/IP allowlisting, Requests-Per-Minute (RPM) ceilings, Tokens-Per-Minute (TPM) quotas, and hard concurrency slot isolation.'
-        }
-      ]
-    },
-    sla: {
-      title: 'Enterprise 99.99% High-Availability SLA',
-      subtitle: 'Multi-Node Failover, Circuit Breaking & Least-Busy Routing',
-      code: 'GALACTUS-SLA-9999',
-      clauses: [
-        {
-          heading: '1. 99.99% Uptime & Automated Failover Guarantee',
-          body: '9router Galactus continuously probes upstream inference nodes via background health heartbeats. If a provider experiences HTTP 429/5xx degradation, traffic fails over in <15ms to healthy standby nodes.'
-        },
-        {
-          heading: '2. Sub-15ms Edge Routing Overhead',
-          body: 'Written in native compiled Go with zero-allocation SSE stream forwarding, adding less than 15ms of proxy overhead to Time-To-First-Token (TTFT).'
-        },
-        {
-          heading: '3. Transparent Token Accounting',
-          body: 'Prepaid balances and token quotas are metered strictly on verified completion responses. Failed upstream requests (5xx) are never billed against client balance.'
-        }
-      ]
-    }
-  }
-
-  const COMPLIANCE_BADGES = [
-    {
-      code: 'SOC 2 Type II',
-      title: 'AICPA Trust Services Criteria',
-      status: 'VERIFIED CONTROLS',
-      desc: 'Continuous cryptographic enforcement for Security, Availability, Processing Integrity, and Confidentiality.',
-      doc: 'security' as PolicyDocId
-    },
-    {
-      code: 'ISO/IEC 27001 & 42001',
-      title: 'InfoSec & AI Governance',
-      status: 'CERTIFIED ARCHITECTURE',
-      desc: 'Aligned with international standards for Information Security and Responsible AI Management Systems.',
-      doc: 'uupdp' as PolicyDocId
-    },
-    {
-      code: 'UU PDP No. 27/2022',
-      title: 'Regulasi Privasi Indonesia',
-      status: 'PATUH PENUH',
-      desc: 'Perlindungan Data Pribadi dengan pemrosesan tanpa retensi (Zero-Retention) & enkripsi kredensial tingkat tinggi.',
-      doc: 'uupdp' as PolicyDocId
-    },
-    {
-      code: 'GDPR & EU AI Act',
-      title: 'European Data Sovereignty',
-      status: 'DPA READY',
-      desc: 'Zero persistence of personal data on disk; full compliance with Art. 17 Right to Erasure and Art. 28 DPA.',
-      doc: 'dpa' as PolicyDocId
-    },
-    {
-      code: 'Zero-Data Retention',
-      title: 'No Training on Customer Data',
-      status: 'ENFORCED AT EDGE',
-      desc: 'Prompts and completions exist only in ephemeral RAM during SSE streaming and are never logged or trained on.',
-      doc: 'zdr' as PolicyDocId
-    },
-    {
-      code: 'HIPAA & PCI-DSS v4',
-      title: 'Sensitive Workload Guardrails',
-      status: 'ELIGIBLE PIPELINE',
-      desc: 'Automated edge scrubbing of PHI/PII, bearer secrets, and payment identifiers before upstream transit.',
-      doc: 'zdr' as PolicyDocId
-    }
-  ]
 
   // Search & filter in telemetry
   let logSearchQuery = $state('')
@@ -447,11 +285,6 @@
   })
 
   onMount(() => {
-    if (typeof window !== 'undefined' && window.location.pathname === '/trust') {
-      landingTab = 'compliance'
-      activeMainTab = 'trust'
-    }
-
     const saved = localStorage.getItem('9router_client_portal_key') || ''
     if (saved) {
       inputKey = saved
@@ -465,9 +298,6 @@
     }, 5000)
 
     const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && activePolicyModal) {
-        activePolicyModal = null
-      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && activeMainTab === 'playground') {
         e.preventDefault()
         void runPlaygroundTest()
@@ -500,7 +330,7 @@
     })
   }
 
-  function switchTab(tab: 'telemetry' | 'playground' | 'guides' | 'tariffs' | 'trust') {
+  function switchTab(tab: 'telemetry' | 'playground' | 'guides' | 'tariffs') {
     activeMainTab = tab
     if (workspaceRef) {
       gsap.fromTo(
@@ -813,14 +643,6 @@
               {/if}
             </button>
           </form>
-
-          <div class="pt-3 border-t border-white/[0.08] flex items-center justify-center gap-4 text-[11px] text-[#8e95a8]">
-            <button type="button" onclick={() => (activePolicyModal = 'zdr')} class="hover:text-white cursor-pointer">Zero-Retention</button>
-            <span>&bull;</span>
-            <button type="button" onclick={() => (activePolicyModal = 'security')} class="hover:text-white cursor-pointer">Anti-Leak</button>
-            <span>&bull;</span>
-            <button type="button" onclick={() => (activePolicyModal = 'uupdp')} class="hover:text-white cursor-pointer">UU PDP</button>
-          </div>
         </div>
       </main>
 
@@ -830,15 +652,14 @@
           <div class="flex items-center gap-2">
             <span class="font-semibold text-white">9router Galactus</span>
             <span>&bull;</span>
-            <span>Enterprise AI Inference Gateway</span>
+            <span>Developer AI Inference Gateway</span>
             <span>&bull;</span>
             <span class="font-mono text-emerald-400">All Systems Operational</span>
           </div>
-          <div class="flex items-center gap-4">
-            <button type="button" onclick={() => (activePolicyModal = 'zdr')} class="hover:text-white cursor-pointer">Privacy Policy</button>
-            <button type="button" onclick={() => (activePolicyModal = 'dpa')} class="hover:text-white cursor-pointer">DPA</button>
-            <button type="button" onclick={() => (activePolicyModal = 'uupdp')} class="hover:text-white cursor-pointer">UU PDP &amp; ISO</button>
-            <button type="button" onclick={() => (activePolicyModal = 'sla')} class="hover:text-white cursor-pointer">SLA</button>
+          <div class="flex items-center gap-3 text-xs font-mono text-neutral-400">
+            <span>DARKCODE Active</span>
+            <span>&bull;</span>
+            <span>Unrestricted Low-Level Routing</span>
           </div>
         </div>
       </footer>
@@ -968,23 +789,6 @@
                 </span>
               {/if}
             </button>
-
-            <button
-              type="button"
-              aria-selected={activeMainTab === 'trust'}
-              onclick={() => switchTab('trust')}
-              class="flex items-center justify-between px-3.5 py-2.5 rounded-[13px] text-xs transition cursor-pointer shrink-0 {activeMainTab === 'trust'
-                ? 'ios-nav-active text-[#e56a4a] font-semibold'
-                : 'text-[#8e95a8] hover:text-white hover:bg-white/[0.04]'}"
-            >
-              <span class="flex items-center gap-2.5">
-                <ShieldCheck class="w-4 h-4" />
-                <span>Privacy &amp; Compliance</span>
-              </span>
-              <span class="hidden lg:inline-block text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                ZDR
-              </span>
-            </button>
           </nav>
         </div>
 
@@ -1042,8 +846,6 @@
                 IDE &amp; Console URL Setup
               {:else if activeMainTab === 'tariffs'}
                 Model Rate &amp; Tariff Sheet
-              {:else}
-                Enterprise Privacy, Regulations &amp; Compliance
               {/if}
             </h2>
 
@@ -1051,7 +853,7 @@
             <div class="hidden md:inline-flex ios-dynamic-island">
               <span class="ios-island-dot"></span>
               <span class="text-[11px] font-mono text-[#d8dce6]">
-                ZDR Active &bull; Anti-Leak ON
+                DARKCODE Active &bull; Low-Level Gateway
               </span>
             </div>
           </div>
@@ -1700,158 +1502,8 @@
                 </div>
               {/if}
             </section>
-          {:else if activeMainTab === 'trust'}
-            <!-- ===============================================================
-                 TAB 5: ENTERPRISE PRIVACY, REGULATIONS & COMPLIANCE CENTER
-                 =============================================================== -->
-            <div class="space-y-6">
-              <!-- Live Security Posture Banner -->
-              <section class="p-6 rounded-[22px] bg-surface border border-white/10 space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                  <div class="space-y-1">
-                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/12 border border-emerald-500/25 text-xs text-emerald-300">
-                      <ShieldCheck class="w-3.5 h-3.5" />
-                      <span>Active Key Compliance Posture: VERIFIED</span>
-                    </div>
-                    <h3 class="text-lg font-semibold text-white pt-1">
-                      Zero-Data Retention &amp; Regulatory Governance Attestation
-                    </h3>
-                    <p class="text-xs text-[#8e95a8]">
-                      Your API credential (<code class="font-mono text-white">{clientInfo.keyMasked}</code>) is protected by hardware-isolated ephemeral routing and full regulatory compliance controls.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onclick={() =>
-                      copyText(
-                        `9ROUTER GALACTUS ENTERPRISE COMPLIANCE ATTESTATION\nKey: ${clientInfo?.keyMasked}\nZero-Data Retention (ZDR): ENFORCED (RAM-Only SSE)\nModel Identity Remasking: ACTIVE\nStandards: SOC 2 Type II, ISO/IEC 27001:2022, ISO/IEC 42001, GDPR DPA, UU PDP No. 27/2022 Indonesia\nTimestamp: ${new Date().toISOString()}`,
-                        'copy-attestation'
-                      )}
-                    class="px-4 py-2 rounded-[13px] bg-[#e56a4a] text-white text-xs font-semibold cursor-pointer flex items-center gap-2"
-                  >
-                    {#if copiedId === 'copy-attestation'}
-                      <Check class="w-4 h-4" />
-                      <span>Attestation Copied!</span>
-                    {:else}
-                      <FileCheck2 class="w-4 h-4" />
-                      <span>Copy Compliance Certificate</span>
-                    {/if}
-                  </button>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-                  <div class="p-4 rounded-[16px] bg-surface-2 border border-white/10 space-y-1">
-                    <div class="text-[11px] text-[#8e95a8]">Data Retention Policy</div>
-                    <div class="text-sm font-semibold text-emerald-400">0 Days (RAM-Only ZDR)</div>
-                    <div class="text-[10px] text-[#8e95a8]">No disk persistence of prompts</div>
-                  </div>
-                  <div class="p-4 rounded-[16px] bg-surface-2 border border-white/10 space-y-1">
-                    <div class="text-[11px] text-[#8e95a8]">Model Training Opt-Out</div>
-                    <div class="text-sm font-semibold text-emerald-400">Strictly Prohibited</div>
-                    <div class="text-[10px] text-[#8e95a8]">Contractual &amp; technical lock</div>
-                  </div>
-                  <div class="p-4 rounded-[16px] bg-surface-2 border border-white/10 space-y-1">
-                    <div class="text-[11px] text-[#8e95a8]">Identity Remasking</div>
-                    <div class="text-sm font-semibold text-white">Bidirectional Edge Mask</div>
-                    <div class="text-[10px] text-[#8e95a8]">Strips headers &amp; fingerprints</div>
-                  </div>
-                  <div class="p-4 rounded-[16px] bg-surface-2 border border-white/10 space-y-1">
-                    <div class="text-[11px] text-[#8e95a8]">Transport &amp; Vault Cipher</div>
-                    <div class="text-sm font-semibold text-white">TLS 1.3 + AES-256-GCM</div>
-                    <div class="text-[10px] text-[#8e95a8]">Authenticated encryption</div>
-                  </div>
-                </div>
-              </section>
-
-              <!-- 6-Card Regulatory & Compliance Matrix -->
-              <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {#each COMPLIANCE_BADGES as item}
-                  <button
-                    type="button"
-                    onclick={() => (activePolicyModal = item.doc)}
-                    class="text-left p-5 rounded-[22px] bg-surface border border-white/10 hover:border-white/20 transition cursor-pointer flex flex-col justify-between gap-4"
-                  >
-                    <div class="space-y-2">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-sm font-semibold text-white">{item.code}</span>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">
-                          {item.status}
-                        </span>
-                      </div>
-                      <div class="text-xs font-medium text-[#d8dce6]">{item.title}</div>
-                      <p class="text-xs text-[#8e95a8] leading-relaxed">{item.desc}</p>
-                    </div>
-                    <div class="flex items-center gap-1 text-[11px] text-[#e56a4a] font-medium">
-                      <span>Inspect full legal &amp; technical clauses</span>
-                      <ArrowUpRight class="w-3.5 h-3.5" />
-                    </div>
-                  </button>
-                {/each}
-              </section>
-            </div>
           {/if}
         </main>
-      </div>
-    </div>
-  {/if}
-
-  <!-- =========================================================================
-       iOS SMOKED GLASS POLICY & REGULATION DOSSIER MODAL
-       ========================================================================= -->
-  {#if activePolicyModal && POLICY_DOCS[activePolicyModal]}
-    {@const doc = POLICY_DOCS[activePolicyModal]}
-    <div
-      class="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
-      onclick={() => (activePolicyModal = null)}
-      onkeydown={(e) => e.key === 'Escape' && (activePolicyModal = null)}
-      role="dialog"
-      tabindex="-1"
-      aria-modal="true"
-    >
-      <div
-        class="w-full max-w-2xl rounded-[24px] bg-surface border border-white/15 p-6 sm:p-8 space-y-6 max-h-[85vh] overflow-y-auto custom-scrollbar"
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.stopPropagation()}
-        role="document"
-      >
-        <div class="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-          <div class="space-y-1">
-            <span class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/12 text-emerald-300 border border-emerald-500/25">
-              {doc.code}
-            </span>
-            <h3 class="text-lg sm:text-xl font-semibold text-white">{doc.title}</h3>
-            <p class="text-xs text-[#8e95a8]">{doc.subtitle}</p>
-          </div>
-          <button
-            type="button"
-            onclick={() => (activePolicyModal = null)}
-            class="p-2 rounded-[12px] bg-surface-2 hover:bg-white/15 text-[#8e95a8] hover:text-white cursor-pointer"
-            aria-label="Close modal"
-          >
-            <X class="w-4 h-4" />
-          </button>
-        </div>
-
-        <div class="space-y-4">
-          {#each doc.clauses as c}
-            <div class="p-4 rounded-[16px] bg-surface-2 border border-white/[0.08] space-y-1.5">
-              <div class="text-xs font-semibold text-white">{c.heading}</div>
-              <p class="text-xs text-[#9ba3b8] leading-relaxed">{c.body}</p>
-            </div>
-          {/each}
-        </div>
-
-        <div class="flex items-center justify-between pt-2 border-t border-white/10">
-          <span class="text-[11px] text-[#8e95a8]">9router Galactus Enterprise Trust &amp; Legal</span>
-          <button
-            type="button"
-            onclick={() => (activePolicyModal = null)}
-            class="px-4 py-2 rounded-[12px] bg-[#e56a4a] text-white text-xs font-semibold cursor-pointer"
-          >
-            Acknowledge &amp; Close
-          </button>
-        </div>
       </div>
     </div>
   {/if}

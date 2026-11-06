@@ -482,13 +482,13 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme: "bearer",
 	},
 	"opencode": {
-		BaseURL:       "https://opencode.ai/inference/openai/v1/chat/completions",
+		BaseURL:       "https://opencode.ai/zen/v1/chat/completions",
 		AuthHeader:    "Authorization",
 		AuthScheme:    "bearer",
 		DefaultAPIKey: "public",
 		NoAuth:        true,
 		SystemoneURL:  "https://opencode.ai/zen/v1/systemone",
-		StaticHeaders: map[string]string{"x-opencode-client": "cli", "User-Agent": "opencode/latest/2.1.4/cli"},
+		StaticHeaders: map[string]string{"x-opencode-client": "cli", "User-Agent": "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"},
 	},
 	// Pay-as-you-go lane (upstream open-sse/providers/registry/opencode-zen.js):
 	// a key is required, and the same key answers /chat/completions, /messages

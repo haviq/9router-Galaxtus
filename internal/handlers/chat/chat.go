@@ -240,6 +240,7 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	}
 	if modelInfo != nil && modelInfo.RemaskRule != nil {
 		w = NewModelRemaskWriter(w, modelInfo.RemaskRule)
+		ctx = WithRemaskRule(ctx, modelInfo.RemaskRule)
 	}
 	requiredCaps := DetectRequiredCapabilities(body)
 
@@ -250,6 +251,10 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 			// augmented list: a capacity-adapter model is a serial fallback, and
 			// adding one would silently change the panel composition.
 			h.handleFusion(ctx, w, body, modelInfo.ComboModels, modelInfo.Strategy, reqBody.Stream, false, reqBody.Model, modelInfo.StickyLimit, modelInfo.JudgeModel)
+			return
+		}
+		if modelInfo.Strategy == "speculative" {
+			h.handleSpeculative(ctx, w, body, modelInfo.ComboModels, reqBody.Stream, false, reqBody.Model)
 			return
 		}
 		// Media from old turns rides in the history even when the current turn
@@ -418,6 +423,9 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if modelInfo != nil && modelInfo.RemaskRule != nil {
+		w = NewModelRemaskWriter(w, modelInfo.RemaskRule)
+	}
 
 	translateResponse := true
 	var workingBody map[string]any
@@ -471,6 +479,9 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
 	ctx = h.withWatermarkConfig(ctx)
+	if modelInfo != nil && modelInfo.RemaskRule != nil {
+		ctx = WithRemaskRule(ctx, modelInfo.RemaskRule)
+	}
 
 	requiredCaps := DetectRequiredCapabilities(body)
 
@@ -483,6 +494,15 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			h.handleFusion(ctx, w, bodyJSON, modelInfo.ComboModels, modelInfo.Strategy, reqBody.Stream, translateResponse, reqBody.Model, modelInfo.StickyLimit, modelInfo.JudgeModel)
+			return
+		}
+		if modelInfo.Strategy == "speculative" {
+			bodyJSON, err := json.Marshal(workingBody)
+			if err != nil {
+				handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to marshal request body")
+				return
+			}
+			h.handleSpeculative(ctx, w, bodyJSON, modelInfo.ComboModels, reqBody.Stream, translateResponse, reqBody.Model)
 			return
 		}
 		// Media from old turns rides in the history even when the current turn
@@ -740,6 +760,29 @@ func (h *ChatHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// Cloak model owner and response envelope for external OpenAI compatibility (/v1/models, /models)
+	if r.URL.Path == "/v1/models" || r.URL.Path == "/models" {
+		for i := range visible {
+			owner := strings.ToLower(visible[i].OwnedBy)
+			if owner == "remask" || owner == "combo" || strings.Contains(owner, "opencode") || strings.Contains(owner, "deepseek") {
+				idLower := strings.ToLower(visible[i].ID)
+				if strings.HasPrefix(idLower, "claude") {
+					visible[i].OwnedBy = "anthropic"
+				} else if strings.HasPrefix(idLower, "gpt") || strings.HasPrefix(idLower, "o1") || strings.HasPrefix(idLower, "o3") {
+					visible[i].OwnedBy = "openai"
+				} else {
+					visible[i].OwnedBy = "system"
+				}
+			}
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"object": "list",
+			"data":   visible,
+		})
+		return
+	}
+
 	modelsJSON, err := json.Marshal(visible)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to encode models")

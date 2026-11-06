@@ -27,7 +27,7 @@ import (
 const (
 	// smartRouterDefaultModel is the free OpenCode System One model upstream
 	// defaults to when a combo configures none.
-	smartRouterDefaultModel = "oc/jev-1.13-free"
+	smartRouterDefaultModel = "opencode/mimo-v2.6-flash-free"
 	// smartRouterTimeout bounds one evaluation; past it the strategy falls
 	// back to the combo's own ordering rather than stalling the turn.
 	smartRouterTimeout = 8 * time.Second
@@ -380,15 +380,110 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if state == "" {
 		return nil
 	}
+
+	// Zero-latency local fast-path if explicitly requested
+	if target == "local" || target == "fast" || target == "heuristic" {
+		return classifyComplexityFallback(state, models)
+	}
+
 	criteria := buildSmartCriteria(models)
 	if len(criteria) == 0 {
 		return nil
 	}
 	choice, err := h.querySystemOneRouter(ctx, target, state, criteria)
-	if err != nil || choice == nil {
+	if err != nil {
+		log.Warn("combo", "smart-router: upstream router error, using complexity fallback", "error", err)
+		return classifyComplexityFallback(state, models)
+	}
+	if choice == nil {
 		return nil
 	}
 	return choice
+}
+
+// classifyComplexityFallback applies an in-memory heuristic classifier when the
+// upstream router model is unreachable, timed out, or explicitly set to local/heuristic.
+// It matches task complexity (systems programming, binary research, kernel, deep code vs trivial prompts)
+// to optimize latency and token economy without external roundtrips.
+func classifyComplexityFallback(state string, models []string) *smartChoice {
+	if len(models) == 0 {
+		return nil
+	}
+
+	stateLower := strings.ToLower(state)
+	isComplex := false
+	isTrivial := false
+
+	// Heavy / Systems Programming / Exploit / Binary / Deep Reasoning signals:
+	complexKeywords := []string{
+		"exploit", "vulnerability", "overflow", "rop", "jop", "shellcode",
+		"disasm", "decompile", "gdb", "windbg", "ida", "ghidra",
+		"heap", "allocator", "segfault", "kernel", "driver", "syscall",
+		"binary", "elf", "pe32", "mach-o", "assembly", "x86", "x64",
+		"aarch64", "arm64", "memory layout", "race condition", "deadlock",
+		"null pointer", "sanitize", "asan", "ubsan", "fuzz",
+		"struct ", "typedef ", "unsafe.pointer", "#include",
+	}
+
+	for _, kw := range complexKeywords {
+		if strings.Contains(stateLower, kw) {
+			isComplex = true
+			break
+		}
+	}
+
+	if !isComplex {
+		if len(state) > 1200 || strings.Contains(state, "```") {
+			isComplex = true
+		} else if len(state) < 160 {
+			// Check for simple / trivial prompt
+			trivialKeywords := []string{
+				"hi", "hello", "hey", "ping", "test", "help", "thanks", "thank you",
+				"yes", "no", "ok", "okay", "sure", "next", "continue", "status",
+			}
+			trimmed := strings.TrimSpace(stateLower)
+			for _, kw := range trivialKeywords {
+				if trimmed == kw || strings.HasPrefix(trimmed, kw+" ") || strings.HasSuffix(trimmed, " "+kw) {
+					isTrivial = true
+					break
+				}
+			}
+		}
+	}
+
+	if isComplex {
+		// Prefer deep reasoning / frontier models
+		heavyPatterns := []string{
+			"claude-3-7", "claude-3.7", "sonnet", "opus",
+			"gpt-4o", "gpt-4", "o1", "o3",
+			"nemotron-3.5-lightning", "nemotron", "deepseek-r1", "reasoner",
+			"pro", "max", "large",
+		}
+		for _, pat := range heavyPatterns {
+			for _, m := range models {
+				if strings.Contains(strings.ToLower(m), pat) {
+					conf := 0.96
+					return &smartChoice{Choice: m, Confidence: &conf}
+				}
+			}
+		}
+	} else if isTrivial {
+		// Prefer fast / flash / lightweight models
+		fastPatterns := []string{
+			"mimo-v2.6-flash", "flash-free", "flash", "lightning-free",
+			"mini", "nano", "turbo", "small", "free",
+		}
+		for _, pat := range fastPatterns {
+			for _, m := range models {
+				if strings.Contains(strings.ToLower(m), pat) {
+					conf := 0.92
+					return &smartChoice{Choice: m, Confidence: &conf}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // querySystemOneRouter performs the evaluation call against the router

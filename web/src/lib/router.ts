@@ -30,6 +30,8 @@ export type ActiveTab =
   | 'plans'
   | 'jailbreak'
   | 'http-rewrite'
+  | 'connection-logs'
+  | 'model-evals'
   | 'keys' // legacy alias for the endpoint tab; see ROUTE_TO_TAB below
   | 'remask'
   | 'portal'
@@ -58,6 +60,8 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   skills: '/dashboard/skills',
   'console-log': '/dashboard/console-log',
   terminal: '/dashboard/console-log',
+  'connection-logs': '/dashboard/connection-logs',
+  'model-evals': '/dashboard/model-evals',
   settings: '/dashboard/profile',
   security: '/dashboard/security',
   plans: '/dashboard/plans',
@@ -190,6 +194,17 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   '/console-log': 'console-log',
   '/terminal': 'console-log',
 
+  // connection logs
+  '/dashboard/connection-logs': 'connection-logs',
+  '/connection-logs': 'connection-logs',
+
+  // model evals / alignment benchmark
+  '/dashboard/model-evals': 'model-evals',
+  '/dashboard/evals': 'model-evals',
+  '/dashboard/uncensored-bench': 'model-evals',
+  '/model-evals': 'model-evals',
+  '/evals': 'model-evals',
+
   // settings / profile
   '/dashboard/profile': 'settings',
   '/dashboard/settings': 'settings',
@@ -244,7 +259,7 @@ export const USAGE_SECTION_BY_TAB: Partial<Record<ActiveTab, UsageSection>> = {
 export function pathToTab(pathname: string): ActiveTab {
   if (!pathname) return 'endpoint'
   const clean = pathname.trim().split('?')[0].split('#')[0]
-  const normalized = (clean.replace(/\/+$/, '') || '/').toLowerCase()
+  const normalized = (clean.replace(/\/+/g, '/').replace(/\/+$/, '') || '/').toLowerCase()
   if (ROUTE_TO_TAB[normalized]) {
     return ROUTE_TO_TAB[normalized]
   }
@@ -259,9 +274,14 @@ export function pathToTab(pathname: string): ActiveTab {
   if (normalized.includes('systemone')) return 'media-systemone'
   if (normalized.includes('media')) return 'media-web'
   if (normalized.includes('token-saver')) return 'token-saver'
+  if (normalized.includes('model-evals') || normalized.includes('eval') || normalized.includes('uncensored')) return 'model-evals'
+  if (normalized.includes('model-status')) return 'model-status'
+  if (normalized.includes('playground')) return 'playground'
+  if (normalized.includes('remask')) return 'remask'
   if (normalized.includes('cli-tools')) return 'cli-tools'
   if (normalized.includes('proxy-pools')) return 'proxy-pools'
   if (normalized.includes('skills')) return 'skills'
+  if (normalized.includes('connection-logs')) return 'connection-logs'
   if (
     normalized.includes('console-log') ||
     normalized.includes('terminal') ||

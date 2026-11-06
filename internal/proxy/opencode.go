@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	json "encoding/json/v2"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -13,17 +14,47 @@ import (
 )
 
 const (
-	// DefaultOpenCodeUA is the official OpenCode fingerprint User-Agent.
-	// OpenCode v2 fingerprint required by the free-tier /inference/openai/v1 API.
-	DefaultOpenCodeUA = "opencode/latest/2.1.4/cli"
+	// DefaultOpenCodeUA is the official OpenCode Zen fingerprint User-Agent (v1.19.0+).
+	DefaultOpenCodeUA = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 
-	// DefaultOpenCodeV1UA is the pre-v2 identity kept by the keyed lanes
-	// (opencode-zen, opencode-go): upstream decolua/9router#4842 moves only
-	// the keyless free executor to v2 and leaves every keyed executor on v1.
-	DefaultOpenCodeV1UA = "opencode/1.19.4"
+	// DefaultOpenCodeV1UA is the official OpenCode Zen fingerprint User-Agent.
+	DefaultOpenCodeV1UA = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 
 	base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	OpenCodeStub = "Not available in this session. Never call this tool."
 )
+
+var (
+	opencodeIDMu      sync.Mutex
+	opencodeLastMs    int64
+	opencodeIDCounter uint64
+)
+
+// NewOpenCodeID generates a canonical OpenCode ID.
+// For descending IDs (ses_), the low 12-bit counter is masked with 0x0F to guarantee (0xfff - low < 16).
+func NewOpenCodeID(prefix string, descending bool) string {
+	ms := time.Now().UnixMilli()
+	opencodeIDMu.Lock()
+	if ms != opencodeLastMs {
+		opencodeLastMs = ms
+		opencodeIDCounter = 0
+	}
+	opencodeIDCounter++
+	cnt := opencodeIDCounter & 0x0F // Guarantee counter < 16 (0xfff - low < 16)
+	current := uint64(ms)*0x1000 + cnt
+	opencodeIDMu.Unlock()
+
+	if descending {
+		current = ^current
+	}
+	var rb [14]byte
+	_, _ = rand.Read(rb[:])
+	var randPart [14]byte
+	for i := 0; i < 14; i++ {
+		randPart[i] = base62Chars[int(rb[i])%len(base62Chars)]
+	}
+	return fmt.Sprintf("%s_%012x%s", prefix, current&0xFFFFFFFFFFFF, string(randPart[:]))
+}
 
 // OpenCodeSessionRegex matches canonical OpenCode session IDs: ses_ + 12 hex + 14 Base62 (30 chars).
 var OpenCodeSessionRegex = regexp.MustCompile(`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`)
@@ -54,12 +85,90 @@ func unstableRandomBase62(n int) string {
 }
 
 // GenerateOpenCodeSessionID generates a descending canonical OpenCode session ID (30 chars).
-// The counter is pinned to 1 like the upstream CLI: upstream decodes the
-// prefix and rejects a non-small counter with 403 FreeTierError, so an
-// incrementing counter would start failing under concurrent load
-// (decolua/9router#4842 descendingTimeHex).
+// The counter is pinned < 16 (cnt & 0x0F) ensuring (0xfff - low < 16) to satisfy the OpenCode Zen gate.
 func GenerateOpenCodeSessionID() string {
-	return "ses_" + descendingTimeHex(uint64(time.Now().UnixMilli()), 1) + unstableRandomBase62(14)
+	return NewOpenCodeID("ses", true)
+}
+
+// GenerateOpenCodeRequestID generates an ascending canonical OpenCode request ID (30 chars).
+func GenerateOpenCodeRequestID() string {
+	return NewOpenCodeID("msg", false)
+}
+
+// PatchOpenCodePayload enforces the 4 OpenCode Zen free tier contract pillars:
+// 1. Injects official stub tools ("bash" and "read") with non-active descriptions
+// 2. Prohibits tool_choice: "none" (strictly forbidden by backend console, causing 403 FreeTierError)
+// 3. Clamps reasoning_effort: "xhigh" -> "high"
+// 4. Ensures stream: true
+func PatchOpenCodePayload(body []byte) []byte {
+	var in map[string]any
+	if err := json.Unmarshal(body, &in); err != nil {
+		return body
+	}
+
+	var tools []any
+	if existing, ok := in["tools"].([]any); ok {
+		tools = existing
+	}
+
+	hasTool := map[string]bool{}
+	for _, t := range tools {
+		if tm, ok := t.(map[string]any); ok {
+			if fn, ok := tm["function"].(map[string]any); ok {
+				if n, _ := fn["name"].(string); n != "" {
+					hasTool[strings.ToLower(strings.TrimSpace(n))] = true
+				}
+			}
+		}
+	}
+
+	hasShell := hasTool["bash"] || hasTool["shell"]
+	if !hasShell {
+		tools = append(tools, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "bash",
+				"description": OpenCodeStub,
+				"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		})
+	}
+	if !hasTool["read"] {
+		tools = append(tools, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "read",
+				"description": OpenCodeStub,
+				"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		})
+	}
+	in["tools"] = tools
+
+	// Hapus tool_choice="none" jika ada (menyebabkan 403 FreeTierError)
+	if tc, ok := in["tool_choice"].(string); ok && strings.EqualFold(tc, "none") {
+		delete(in, "tool_choice")
+	} else if tm, ok := in["tool_choice"].(map[string]any); ok {
+		if t, _ := tm["type"].(string); strings.EqualFold(t, "none") {
+			delete(in, "tool_choice")
+		}
+	}
+
+	// Clamp reasoning_effort: xhigh/max -> high
+	if re, ok := in["reasoning_effort"].(string); ok {
+		if strings.EqualFold(re, "xhigh") || strings.EqualFold(re, "max") {
+			in["reasoning_effort"] = "high"
+		}
+	}
+
+	// OpenCode Zen free tier strictly requires stream=true
+	in["stream"] = true
+
+	out, err := json.Marshal(in)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // IsCanonicalOpenCodeSession reports whether id is a session the upstream free
@@ -181,17 +290,6 @@ func descendingTimeHex(timeMs, counter uint64) string {
 	return hex.EncodeToString(timeBytes[:])
 }
 
-// GenerateOpenCodeRequestID generates a canonical OpenCode request ID (30 chars).
-func GenerateOpenCodeRequestID() string {
-	now := time.Now().UnixMilli()
-	current := uint64(now)*0x1000 + 1
-	var timeBytes [6]byte
-	for i := range 6 {
-		timeBytes[i] = byte((current >> (40 - 8*uint64(i))) & 0xff)
-	}
-	return "msg_" + hex.EncodeToString(timeBytes[:]) + unstableRandomBase62(14)
-}
-
 // TranslateOpenCodeSessionID deterministically maps a downstream session id
 // onto one the upstream free tier accepts. A canonical id — ses_ shape plus
 // the descending time encoding the gate decodes — is forwarded verbatim;
@@ -303,6 +401,8 @@ func BuildOpenCodeHeaders(rawHeaders map[string]string, sessionID string, isStre
 		"x-opencode-session-id": session,
 		"x-session-affinity":    session,
 		"x-session-id":          session,
+		"X-Session-Id":          session,
+		"x-opencode-request":    GenerateOpenCodeRequestID(),
 		"b3":                    b3,
 		"traceparent":           traceparent,
 		// Upstream defaults the project to "global"
@@ -339,6 +439,7 @@ func BuildOpenCodeHeaders(rawHeaders map[string]string, sessionID string, isStre
 			res["x-opencode-session-id"] = hint
 			res["x-session-affinity"] = hint
 			res["x-session-id"] = hint
+			res["X-Session-Id"] = hint
 		}
 		if lk == "x-opencode-client" {
 			res[k] = v

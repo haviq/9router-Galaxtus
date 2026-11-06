@@ -40,6 +40,9 @@ describe('router', () => {
     expect(pathToTab('/dashboard/console-log')).toBe('console-log')
     expect(pathToTab('/dashboard/terminal')).toBe('console-log')
     expect(pathToTab('/dashboard/profile')).toBe('settings')
+    expect(pathToTab('/dashboard/model-evals')).toBe('model-evals')
+    expect(pathToTab('/dashboard//model-evals')).toBe('model-evals')
+    expect(pathToTab('/evals')).toBe('model-evals')
   })
 
   it('has canonical routes for all tabs in TAB_ROUTES', () => {

@@ -123,8 +123,14 @@ func (h *ChatHandler) HandleResponses(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if modelInfo != nil && modelInfo.RemaskRule != nil {
+		w = NewModelRemaskWriter(w, modelInfo.RemaskRule)
+	}
 
 	ctx := thinking.WithSuffixIntent(h.newResponsesContext(r, modelName, modelInfo, &body), suffixIntent)
+	if modelInfo != nil && modelInfo.RemaskRule != nil {
+		ctx = WithRemaskRule(ctx, modelInfo.RemaskRule)
+	}
 	// The operator's providerThinking overrides are read once here, not once
 	// per connection attempt.
 	ctx = h.withProviderThinkingModes(ctx)
@@ -148,6 +154,15 @@ func (h *ChatHandler) HandleResponses(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			h.handleFusion(ctx, w, bodyJSON, modelInfo.ComboModels, modelInfo.Strategy, reqBody.Stream, false, reqBody.Model, modelInfo.StickyLimit, modelInfo.JudgeModel)
+			return
+		}
+		if modelInfo.Strategy == "speculative" {
+			bodyJSON, err := json.Marshal(workingBody)
+			if err != nil {
+				handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to marshal request body")
+				return
+			}
+			h.handleSpeculative(ctx, w, bodyJSON, modelInfo.ComboModels, reqBody.Stream, false, reqBody.Model)
 			return
 		}
 		h.handleMessagesComboFallback(ctx, w, workingBody, augmented, comboStrategy, reqBody.Stream, reqBody.Model, modelInfo.StickyLimit, injected...)

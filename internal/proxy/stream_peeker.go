@@ -11,6 +11,37 @@ import (
 // ErrStreamingZeroContent indicates that an upstream SSE stream completed without producing usable content.
 var ErrStreamingZeroContent = errors.New("streaming upstream finished without content")
 
+// ErrRefusalDetected indicates that the initial stream content was identified as a model refusal,
+// triggering auto-failover to the next candidate model in a combo chain.
+var ErrRefusalDetected = errors.New("refusal detected: failing over to next model candidate")
+
+var refusalPhrases = []string{
+	"i cannot fulfill",
+	"i am unable to fulfill",
+	"i apologize, but i cannot",
+	"i'm sorry, but i cannot",
+	"i am sorry, but i cannot",
+	"i must decline",
+	"as an ai, i cannot",
+	"as an ai language model, i cannot",
+	"against my safety guidelines",
+	"against my ethical guidelines",
+}
+
+// DetectSSERefusal checks if the SSE chunk or text contains model refusal signatures.
+func DetectSSERefusal(chunk []byte) bool {
+	if len(chunk) == 0 {
+		return false
+	}
+	s := strings.ToLower(string(chunk))
+	for _, p := range refusalPhrases {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // HasSSEContent reports whether an SSE chunk carries client-visible assistant content.
 // Delta role, reasoning/thinking, and empty finish frames do not count as content.
 func HasSSEContent(chunk []byte) bool {
@@ -66,6 +97,7 @@ type StreamContentPeeker struct {
 	mu         sync.Mutex
 	committed  bool
 	sawContent bool
+	sawRefusal bool
 	buf        bytes.Buffer
 	header     http.Header
 	statusCode int
@@ -115,6 +147,13 @@ func (p *StreamContentPeeker) Write(b []byte) (int, error) {
 		return p.ResponseWriter.Write(b)
 	}
 
+	// Refusal interception: inspect initial content buffer for model refusal
+	if DetectSSERefusal(b) || (p.buf.Len() > 0 && DetectSSERefusal(p.buf.Bytes())) {
+		p.sawRefusal = true
+		p.buf.Write(b)
+		return len(b), nil
+	}
+
 	if HasSSEContent(b) {
 		p.sawContent = true
 		p.commitLocked()
@@ -150,6 +189,9 @@ func (p *StreamContentPeeker) Finish() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.sawRefusal {
+		return ErrRefusalDetected
+	}
 	if !p.sawContent {
 		return ErrStreamingZeroContent
 	}

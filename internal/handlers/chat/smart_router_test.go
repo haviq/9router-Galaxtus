@@ -370,3 +370,46 @@ func TestClearFailedSmartSticky(t *testing.T) {
 		t.Fatal("pinned-model failure did not clear the pin")
 	}
 }
+
+func TestClassifyComplexityFallback(t *testing.T) {
+	comboModels := []string{
+		"opencode/mimo-v2.6-flash-free",
+		"opencode/nemotron-3.5-lightning-free",
+		"anthropic/claude-3-7-sonnet-20250219",
+	}
+
+	t.Run("heavy systems vulnerability query routes to frontier deep reasoner", func(t *testing.T) {
+		prompt := "Analyze heap layout overflow primitive in Linux kernel eBPF driver and construct ROP gadget chain"
+		choice := classifyComplexityFallback(prompt, comboModels)
+		if choice == nil {
+			t.Fatal("expected choice for heavy systems query")
+		}
+		if choice.Choice != "anthropic/claude-3-7-sonnet-20250219" {
+			t.Errorf("got %q, want claude-3-7-sonnet", choice.Choice)
+		}
+		if choice.Confidence == nil || *choice.Confidence < 0.95 {
+			t.Errorf("confidence = %v, want >= 0.95", choice.Confidence)
+		}
+	})
+
+	t.Run("trivial query routes to flash free tier", func(t *testing.T) {
+		prompt := "hello"
+		choice := classifyComplexityFallback(prompt, comboModels)
+		if choice == nil {
+			t.Fatal("expected choice for trivial query")
+		}
+		if choice.Choice != "opencode/mimo-v2.6-flash-free" {
+			t.Errorf("got %q, want mimo-v2.6-flash-free", choice.Choice)
+		}
+	})
+
+	t.Run("local/heuristic target routes immediately without upstream network call", func(t *testing.T) {
+		h := &ChatHandler{}
+		body := []byte(`{"messages":[{"role":"user","content":"explain x86 assembly memory layout and syscall conventions"}]}`)
+		choice := h.resolveSmartChoice(context.Background(), body, comboModels, "heuristic")
+		if choice == nil || choice.Choice != "anthropic/claude-3-7-sonnet-20250219" {
+			t.Fatalf("expected direct heuristic resolution, got %+v", choice)
+		}
+	})
+}
+
