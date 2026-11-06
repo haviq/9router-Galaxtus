@@ -87,6 +87,8 @@
 
   // General Settings State
   let requireLogin = $state(false)
+  let stealthWebUI = $state(false)
+  let stealthBypassKey = $state('')
   let sessionTimeout = $state('24h')
   let enableObservability = $state(false)
   let observabilityMode = $state<'full' | 'errors_only' | 'off'>('full')
@@ -347,6 +349,8 @@
       const s = await api.getSettings()
       if (s) {
         requireLogin = !!s.requireLogin
+        stealthWebUI = !!(s.stealthWebUI ?? false)
+        if (typeof s.stealthBypassKey === 'string') stealthBypassKey = s.stealthBypassKey
         enableObservability = !!s.enableObservability
         if (s.sessionTimeout) sessionTimeout = String(s.sessionTimeout)
         if (s.fallbackStrategy) fallbackStrategy = String(s.fallbackStrategy)
@@ -519,6 +523,8 @@
     try {
       await api.updateSettings({
         requireLogin,
+        stealthWebUI,
+        stealthBypassKey: stealthBypassKey.trim(),
         sessionTimeout,
         enableObservability,
         observabilityMode,
@@ -918,6 +924,42 @@
             <option value="7d">7 Days</option>
             <option value="never">Never (Stay signed in)</option>
           </select>
+        </div>
+
+        <!-- Stealth Base URL & Cloaking -->
+        <div class="pt-2 border-t border-border/60 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-semibold text-text-main">Stealth Base URL</p>
+              <p class="text-[11px] text-text-subtle">
+                Sembunyikan dashboard & halaman login dari publik (mengembalikan 404). Hanya admin dengan bypass key yang bisa masuk.
+              </p>
+            </div>
+            <Toggle
+              checked={stealthWebUI}
+              size="sm"
+              label="Stealth Base URL"
+              onChange={(val) => (stealthWebUI = val)}
+            />
+          </div>
+
+          {#if stealthWebUI}
+            <div class="space-y-1 pt-1">
+              <label for="stealth-key" class="block text-[11px] font-semibold text-text-muted">
+                Secret Bypass Key / Parameter URL:
+              </label>
+              <input
+                id="stealth-key"
+                type="text"
+                bind:value={stealthBypassKey}
+                placeholder="misal: darkcode-root-9x (buka via ?key=...)"
+                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main focus:outline-none focus:border-brand-500"
+              />
+              <p class="text-[10px] text-text-subtle">
+                Akses dashboard via: <code class="font-mono text-brand-500">https://your-domain.com/?key={stealthBypassKey || 'YOUR_KEY'}</code>
+              </p>
+            </div>
+          {/if}
         </div>
 
         <!-- Update Password Toggle & Form -->

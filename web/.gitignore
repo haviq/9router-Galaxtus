@@ -8,8 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+# dist tracked for standalone Go binary compilation
 *.local
 
 # Editor directories and files
