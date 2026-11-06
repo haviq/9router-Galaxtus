@@ -4,7 +4,6 @@
 /SHA256SUMS.txt
 *.exe
 *.exe~
-web/dist/
 web/.dist-stamp
 _site/
 

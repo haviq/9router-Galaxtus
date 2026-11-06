@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0b0e13" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="9router Galactus" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>9router Galactus - High-Throughput AI Gateway</title>
+    <script>
+      (function() {
+        var t = localStorage.getItem('9router-theme') || localStorage.getItem('theme') || 'dark';
+        if (t === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.classList.add('light');
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BaNzLf42.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-DHJc9CmU.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-gsap-CvDoa17S.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-marked-Of0D6mTi.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DSpjH7Qk.css">
+  </head>
+  <body class="bg-[var(--app-bg)] text-[var(--app-text-main)] font-sans antialiased selection:bg-[#e56a4a]/30 selection:text-white transition-colors duration-300">
+    <div id="app"></div>
+  </body>
+</html>
