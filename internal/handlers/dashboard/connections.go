@@ -1275,10 +1275,8 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 
 	isOpenAI := strings.HasPrefix(conn.Provider, "openai-compatible-")
 	isAnthropic := strings.HasPrefix(conn.Provider, "anthropic-compatible-")
-	if !isOpenAI && !isAnthropic {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "provider "+conn.Provider+" does not support models listing")
-		return
-	}
+	isEmbedding := strings.HasPrefix(conn.Provider, "custom-embedding-")
+
 	baseURL := ""
 	if connData.ProviderSpecificData != nil {
 		if v, ok := connData.ProviderSpecificData["baseUrl"].(string); ok {
@@ -1291,20 +1289,54 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 		}
 	}
 	if baseURL == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "no base URL configured for OpenAI compatible provider")
+		if cfg, ok := providers.KnownProviders[conn.Provider]; ok && cfg.BaseURL != "" {
+			baseURL = strings.TrimSpace(cfg.BaseURL)
+		}
+	}
+	if baseURL == "" && !isOpenAI && !isAnthropic && !isEmbedding {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "provider "+conn.Provider+" does not support models listing")
 		return
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	if baseURL == "" {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "no base URL configured for provider")
+		return
+	}
+
+	baseURL = strings.TrimRight(baseURL, "/")
+	if isAnthropic {
+		baseURL = strings.TrimSuffix(baseURL, "/messages/models")
+		baseURL = strings.TrimSuffix(baseURL, "/messages")
+	} else if isEmbedding {
+		baseURL = strings.TrimSuffix(baseURL, "/embeddings")
+	} else {
+		baseURL = strings.TrimSuffix(baseURL, "/chat/completions")
+		baseURL = strings.TrimSuffix(baseURL, "/completions")
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	modelsURL := baseURL
+	if !strings.HasSuffix(modelsURL, "/models") {
+		modelsURL += "/models"
+	}
+
 	headers := map[string]string{"Content-Type": "application/json"}
 	if isAnthropic {
-		baseURL = strings.TrimSuffix(baseURL, "/messages")
 		headers["x-api-key"] = connData.APIKey
 		headers["anthropic-version"] = "2023-06-01"
 		headers["Authorization"] = "Bearer " + connData.APIKey
 	} else {
 		headers["Authorization"] = "Bearer " + connData.APIKey
 	}
-	status, body, err := validateProbeDo(r.Context(), http.MethodGet, baseURL+"/models", headers, nil)
+
+	status, body, err := validateProbeDo(r.Context(), http.MethodGet, modelsURL, headers, nil)
+	if (status == http.StatusNotFound || status == http.StatusBadRequest) && !strings.Contains(modelsURL, "/v1/") {
+		fallbackURL := strings.TrimSuffix(baseURL, "/models") + "/v1/models"
+		if fbStatus, fbBody, fbErr := validateProbeDo(r.Context(), http.MethodGet, fallbackURL, headers, nil); fbErr == nil && fbStatus == http.StatusOK {
+			status = fbStatus
+			body = fbBody
+			err = nil
+		}
+	}
 	if err != nil {
 		statusCode, _, errMsg := ClassifyUpstreamNetworkError(err)
 		handlerutil.WriteJSONError(w, statusCode, "failed to fetch models: "+errMsg)
@@ -1314,25 +1346,36 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 		handlerutil.WriteJSONError(w, status, "failed to fetch models: "+http.StatusText(status))
 		return
 	}
+
 	var parsed struct {
 		Data   []any `json:"data"`
 		Models []any `json:"models"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadGateway, "invalid models response")
+	var rawList []any
+	if err := json.Unmarshal(body, &parsed); err == nil && (len(parsed.Data) > 0 || len(parsed.Models) > 0) {
+		models := parsed.Data
+		if len(models) == 0 {
+			models = parsed.Models
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"provider":     conn.Provider,
+			"connectionId": conn.ID,
+			"models":       models,
+		})
 		return
 	}
-	models := parsed.Data
-	if models == nil {
-		models = parsed.Models
-	}
-	if models == nil {
-		models = []any{}
+	if err := json.Unmarshal(body, &rawList); err == nil && len(rawList) > 0 {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"provider":     conn.Provider,
+			"connectionId": conn.ID,
+			"models":       rawList,
+		})
+		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"provider":     conn.Provider,
 		"connectionId": conn.ID,
-		"models":       models,
+		"models":       []any{},
 	})
 }
 
