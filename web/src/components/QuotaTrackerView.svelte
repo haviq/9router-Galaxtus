@@ -97,7 +97,7 @@
   let quotaData = $state<Record<string, QuotaEntry>>({})
   let quotaLoading = $state<Record<string, boolean>>({})
   let quotaErrors = $state<Record<string, string>>({})
-  let autoRefresh = $state(true)
+  let autoRefresh = $state(false)
   let hasHydratedAutoRefresh = $state(false)
   let lastUpdated = $state<Date | null>(null)
   let refreshingAll = $state(false)
@@ -862,9 +862,9 @@
     const deepLinkProvider = new URLSearchParams(window.location.search).get('provider')
     if (deepLinkProvider) providerFilter = deepLinkProvider
 
-    // Hydrate auto-refresh preference
+    // Hydrate auto-refresh preference (default to false for performance)
     const stored = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY)
-    autoRefresh = stored === null ? true : stored === 'true'
+    autoRefresh = stored === 'true'
     hasHydratedAutoRefresh = true
 
     // Load quota visibility settings
@@ -895,7 +895,9 @@
       const visibleConnections = await fetchConnections(page)
       connectionsLoading = false
       initialLoadDone = true
-      await fetchQuotasFor(visibleConnections, visibleConnections)
+      if (autoRefresh) {
+        await fetchQuotasFor(visibleConnections, visibleConnections)
+      }
     })()
 
     // Pause auto-refresh when tab hidden (Page Visibility API)

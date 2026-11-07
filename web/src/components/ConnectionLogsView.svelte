@@ -274,10 +274,10 @@
     loadDetails(1)
     connectSseStream()
     refreshTimer = setInterval(() => {
-      if (autoRefresh) {
+      if (autoRefresh && !streamConnected) {
         loadDetails(detailsPage)
       }
-    }, 5000)
+    }, 30000)
   })
 
   onDestroy(() => {

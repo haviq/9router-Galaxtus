@@ -106,7 +106,7 @@
     if (!url) return false
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 4000)
+      const timeoutId = setTimeout(() => controller.abort(), 1200)
       const res = await fetch(`${url}/api/health`, {
         mode: 'cors',
         cache: 'no-store',
@@ -116,7 +116,7 @@
       if (res && res.ok) return true
 
       const controller2 = new AbortController()
-      const timeoutId2 = setTimeout(() => controller2.abort(), 4000)
+      const timeoutId2 = setTimeout(() => controller2.abort(), 1200)
       const res2 = await fetch(`${url}/health`, {
         mode: 'cors',
         cache: 'no-store',

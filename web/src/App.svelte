@@ -244,7 +244,7 @@
       } catch {
         // silent refresh error
       }
-    }, 10000)
+    }, 45000)
 
     return () => {
       clearInterval(interval)

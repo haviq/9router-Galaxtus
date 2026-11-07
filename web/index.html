@@ -18,6 +18,7 @@
         try {
           localStorage.removeItem('9router_quota_cache');
           localStorage.removeItem('9router_sidebar_saldo_open');
+          localStorage.removeItem('quotaCacheData');
         } catch(e) {}
         var t = localStorage.getItem('9router-theme') || localStorage.getItem('theme') || 'dark';
         if (t === 'dark') {

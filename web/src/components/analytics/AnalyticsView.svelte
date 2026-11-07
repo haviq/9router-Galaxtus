@@ -332,12 +332,12 @@
 
     connectStream()
 
-    // Auto-poll stats every 5s so KPI counters smoothly increment in real time
+    // Auto-poll stats every 30s so KPI counters refresh without flooding the network
     const pollTimer = setInterval(() => {
       if (section === 'overview' && (typeof document === 'undefined' || !document.hidden)) {
         loadStats(period)
       }
-    }, 5000)
+    }, 30000)
 
     return () => {
       isCancelled = true
