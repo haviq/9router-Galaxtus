@@ -878,7 +878,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "id": "openrouter",
     "name": "OpenRouter",
     "category": "freeTier",
-    "alias": "openrouter",
+    "alias": "or",
     "color": "#F97316",
     "icon": "router",
     "website": "https://openrouter.ai",

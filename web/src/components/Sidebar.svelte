@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { api, type SystemVersionInfo } from '../api/client'
+  import { onMount } from 'svelte'
+  import { api, type SystemVersionInfo, type ProviderConnection } from '../api/client'
   import gsap from 'gsap'
   import { copyToClipboard } from '../lib/clipboard'
   import { TAB_ROUTES, type ActiveTab } from '../lib/router'
   import { isNavLinkActive, orderedNavGroups } from '../lib/nav'
+  import { getQuotaCache, setQuotaCache, parseQuotaData, type QuotaEntry } from './quota/types'
+  import { providerRoutingPrefix } from './analytics/types'
 
   export type { ActiveTab }
   let {
@@ -13,6 +16,7 @@
     },
     activeConnections = 0,
     totalConnections = 0,
+    connections = [] as ProviderConnection[],
     onClose,
     showUpdateModal = $bindable(false),
     updateInfo = $bindable(null),
@@ -26,6 +30,7 @@
     navigate?: (tab: ActiveTab, replace?: boolean) => void
     activeConnections?: number
     totalConnections?: number
+    connections?: ProviderConnection[]
     onClose?: () => void
     showUpdateModal?: boolean
     updateInfo?: SystemVersionInfo | null
@@ -43,6 +48,112 @@
 
   // Media providers accordion (collapsed by default)
   let isMediaOpen = $state(false)
+
+  // Live Provider Saldo & Prefix Widget State
+  let liveConnections = $state<ProviderConnection[]>([])
+  let balanceLoading = $state<Record<string, boolean>>({})
+  let isProbingAllSidebar = $state(false)
+  let copiedSidebarPrefix = $state<string | null>(null)
+  let quotaCache = $state(getQuotaCache())
+  let isBalancesOpen = $state(true)
+
+  function copyPrefix(prefix: string) {
+    copyToClipboard(prefix)
+    copiedSidebarPrefix = prefix
+    setTimeout(() => {
+      if (copiedSidebarPrefix === prefix) copiedSidebarPrefix = null
+    }, 1500)
+  }
+
+  async function refreshBalance(connId: string) {
+    if (balanceLoading[connId]) return
+    balanceLoading = { ...balanceLoading, [connId]: true }
+    try {
+      const res = await api.getConnectionUsage(connId, true)
+      const conn = liveConnections.find((c) => c.id === connId)
+      const prov = conn?.provider || ''
+      const entry: QuotaEntry = {
+        quotas: parseQuotaData(prov, res),
+        plan: res?.plan || null,
+        message: res?.message || null,
+        raw: res,
+      }
+      setQuotaCache(connId, entry)
+      quotaCache = getQuotaCache()
+    } catch (e) {
+      console.error('Failed to probe provider balance in sidebar:', e)
+    } finally {
+      balanceLoading = { ...balanceLoading, [connId]: false }
+    }
+  }
+
+  async function probeAllSidebar() {
+    if (isProbingAllSidebar || !liveConnections.length) return
+    isProbingAllSidebar = true
+    try {
+      const tasks = liveConnections.map((c) => refreshBalance(c.id))
+      await Promise.allSettled(tasks)
+    } finally {
+      isProbingAllSidebar = false
+    }
+  }
+
+  function getConnBalance(connId: string) {
+    const cached = quotaCache[connId]
+    const isLoading = !!balanceLoading[connId]
+    if (!cached || !cached.quotas || cached.quotas.length === 0) {
+      return { text: 'Check Saldo', color: 'text-text-muted', isLoading, hasData: false }
+    }
+    const creditQ = cached.quotas.find((q) => q.isCreditBalance || (q.name && q.name.toLowerCase().includes('balance')) || (q.name && q.name.toLowerCase().includes('credit')))
+    if (creditQ) {
+      const cur = creditQ.currency || 'USD'
+      const tot = typeof creditQ.total === 'number' ? creditQ.total : 0
+      const isPositive = tot > 0
+      return {
+        text: `${cur === 'USD' ? '$' : ''}${tot.toFixed(2)} ${cur}`,
+        color: isPositive ? 'text-cyan-400 font-bold' : 'text-rose-400 font-bold',
+        isLoading,
+        hasData: true,
+      }
+    }
+    const firstQ = cached.quotas[0]
+    if (firstQ.unlimited) {
+      return { text: 'Unlimited', color: 'text-emerald-400 font-bold', isLoading, hasData: true }
+    }
+    if (firstQ.remainingPercentage != null) {
+      const pct = firstQ.remainingPercentage
+      return {
+        text: `${pct}%`,
+        color: pct > 30 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold',
+        isLoading,
+        hasData: true,
+      }
+    }
+    return { text: firstQ.name || 'Active', color: 'text-text-main font-semibold', isLoading, hasData: true }
+  }
+
+  $effect(() => {
+    if (connections && connections.length > 0) {
+      liveConnections = connections
+    }
+  })
+
+  onMount(async () => {
+    try {
+      const res = await api.getConnections()
+      if (Array.isArray(res) && res.length > 0) {
+        liveConnections = res
+        // Auto-probe uncached active providers in the background
+        for (const conn of res.slice(0, 6)) {
+          if (!quotaCache[conn.id]) {
+            refreshBalance(conn.id)
+          }
+        }
+      }
+    } catch {
+      // quiet fallback
+    }
+  })
 
   $effect(() => {
     api
@@ -371,18 +482,130 @@
     {/each}
   </nav>
 
+  <!-- Live Provider Saldo & Routing Prefix Widget (rv/, or/, etc.) -->
+  {#if liveConnections.length > 0}
+    <div class="px-4 py-2 border-t border-border-subtle shrink-0">
+      <div class="rounded-xl bg-surface/80 border border-border-subtle p-2.5 space-y-2">
+        <div class="flex items-center justify-between">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 text-[11px] font-semibold text-text-muted hover:text-text-main transition-colors cursor-pointer"
+            onclick={() => (isBalancesOpen = !isBalancesOpen)}
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span class="uppercase tracking-wider">Saldo & Prefix</span>
+            <span class="text-[10px] text-text-subtle font-mono">({liveConnections.length})</span>
+            <span
+              class="material-symbols-outlined text-[14px] transition-transform duration-200"
+              style:transform={isBalancesOpen ? 'rotate(180deg)' : 'rotate(0deg)'}
+            >
+              expand_more
+            </span>
+          </button>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="text-[10px] px-1.5 py-0.5 rounded bg-brand-500/15 text-brand-400 hover:bg-brand-500/25 transition-colors cursor-pointer inline-flex items-center gap-0.5 font-medium"
+              title="Refresh semua saldo provider"
+              onclick={probeAllSidebar}
+              disabled={isProbingAllSidebar}
+            >
+              <span class={isProbingAllSidebar ? 'animate-spin' : ''}>↻</span>
+              <span>{isProbingAllSidebar ? 'Probing...' : 'Probe'}</span>
+            </button>
+          </div>
+        </div>
+
+        {#if isBalancesOpen}
+          <div class="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-0.5">
+            {#each liveConnections as conn (conn.id)}
+              {@const prefix = providerRoutingPrefix(conn.provider || conn.name)}
+              {@const bal = getConnBalance(conn.id)}
+              <div class="flex items-center justify-between gap-1.5 py-1 px-1.5 rounded-lg bg-surface-2/40 hover:bg-surface-2/70 transition-colors text-xs">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  {#if prefix}
+                    <button
+                      type="button"
+                      class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-500/15 text-brand-400 border border-brand-500/30 hover:bg-brand-500/25 transition-colors cursor-pointer shrink-0"
+                      title="Routing prefix {prefix}<model> (Click to copy)"
+                      onclick={() => copyPrefix(prefix)}
+                    >
+                      {prefix}
+                    </button>
+                  {/if}
+                  <span class="truncate text-[11px] font-medium text-text-main" title={conn.name || conn.provider}>
+                    {conn.name || conn.provider}
+                  </span>
+                </div>
+
+                <div class="flex items-center gap-1 shrink-0">
+                  {#if bal.isLoading}
+                    <span class="text-[10px] text-text-muted animate-pulse">...</span>
+                  {:else if bal.hasData}
+                    <span class="text-[11px] font-mono {bal.color}">{bal.text}</span>
+                  {:else}
+                    <button
+                      type="button"
+                      class="text-[10px] text-brand-400 hover:underline cursor-pointer"
+                      onclick={() => refreshBalance(conn.id)}
+                    >
+                      Cek
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="text-[10px] text-text-muted hover:text-brand-400 transition-colors p-0.5 rounded cursor-pointer"
+                    title="Refresh saldo akun ini"
+                    onclick={() => refreshBalance(conn.id)}
+                  >
+                    ↻
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+
+          {#if copiedSidebarPrefix}
+            <div class="text-[10px] text-emerald-400 text-center py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20 font-mono">
+              ✓ Prefix {copiedSidebarPrefix} disalin!
+            </div>
+          {/if}
+
+          <div class="pt-1 flex items-center justify-between text-[10px] text-text-muted border-t border-border-subtle/50">
+            <button
+              type="button"
+              class="hover:text-brand-400 transition-colors cursor-pointer"
+              onclick={(e) => handleNav('quota', e)}
+            >
+              Quota Tracker &rarr;
+            </button>
+            <button
+              type="button"
+              class="hover:text-brand-400 transition-colors cursor-pointer"
+              onclick={(e) => handleNav('analytics', e)}
+            >
+              Analytics &rarr;
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- Bottom connection summary -->
   <div class="p-4 border-t border-border-subtle shrink-0">
-    <div
-      class="p-2.5 rounded-[10px] bg-surface border border-border-subtle flex items-center justify-between"
+    <a
+      href={TAB_ROUTES.connections}
+      onclick={(e) => handleNav('connections', e)}
+      class="p-2.5 rounded-[10px] bg-surface border border-border-subtle flex items-center justify-between hover:border-brand-500/30 transition-colors cursor-pointer group"
     >
       <div class="min-w-0">
-        <p class="text-[11px] text-text-muted uppercase tracking-wide">Providers</p>
+        <p class="text-[11px] text-text-muted uppercase tracking-wide group-hover:text-text-main transition-colors">Providers</p>
         <p class="text-xs font-semibold text-text-main mt-0.5 truncate">
           {activeConnections} <span class="text-text-muted font-normal">/ {totalConnections} active</span>
         </p>
       </div>
       <span class="material-symbols-outlined text-primary text-[18px]">radio_button_checked</span>
-    </div>
+    </a>
   </div>
 </aside>

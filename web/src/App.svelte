@@ -381,6 +381,7 @@
         }}
         activeConnections={activeConnectionsCount}
         totalConnections={connections.length}
+        {connections}
         onClose={() => (isMobileMenuOpen = false)}
         bind:showUpdateModal={isUpdateModalOpen}
         bind:updateInfo={systemUpdateInfo}
