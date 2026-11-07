@@ -12,6 +12,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="9router Galactus" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>9router Galactus - High-Throughput AI Gateway</title>
     <script>
       (function() {
@@ -28,13 +31,15 @@
           document.documentElement.classList.remove('dark');
           document.documentElement.classList.add('light');
         }
+        var anim = localStorage.getItem('9router-anim') || 'off';
+        document.documentElement.setAttribute('data-anim-level', anim);
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-0jHv2xBq.js"></script>
+    <script type="module" crossorigin src="/assets/index-C1gC3pWM.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/vendor-icons-DHJc9CmU.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-gsap-CvDoa17S.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-marked-Of0D6mTi.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-DSpjH7Qk.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-DLQO-62Z.css">
   </head>
   <body class="bg-[var(--app-bg)] text-[var(--app-text-main)] font-sans antialiased selection:bg-[#e56a4a]/30 selection:text-white transition-colors duration-300">
     <div id="app"></div>

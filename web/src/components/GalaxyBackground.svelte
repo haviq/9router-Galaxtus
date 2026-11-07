@@ -243,7 +243,11 @@
     }
 
     const onScroll = () => {
+      if (reduced) return
       updateScroll()
+      if (!parallaxRafId) {
+        parallaxRafId = requestAnimationFrame(renderParallax)
+      }
     }
 
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -261,75 +265,84 @@
     bodyObserver.observe(document.body, { childList: true, subtree: true })
 
     const renderParallax = () => {
-      if (!reduced) {
-        currentScroll += (targetScroll - currentScroll) * 0.085
-        const norm = Math.min(2.0, currentScroll / 450)
-
-        // 1. Gas Giant (Foreground Supergiant): aggressive 3D push-in zoom (+48%) + downward drift
-        if (planetGasGiantAnchor) {
-          const scale = 1 + norm * 0.48
-          const x = -norm * 45
-          const y = norm * 90
-          planetGasGiantAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 2. Saturn (Bottom-Left Ringed Giant): zooms (+42%) and glides upward into view
-        if (planetSaturnAnchor) {
-          const scale = 1 + norm * 0.42
-          const x = norm * 40
-          const y = -norm * 85
-          planetSaturnAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 3. Exo-Earth (Oceanic Jewel): zooms (+38%) and floats upward with majestic presence
-        if (planetExoEarthAnchor) {
-          const scale = 1 + norm * 0.38
-          const x = -norm * 35
-          const y = -norm * 75
-          planetExoEarthAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 4. Crimson Dwarf World: zooms (+34%) and pans diagonally
-        if (planetCrimsonAnchor) {
-          const scale = 1 + norm * 0.34
-          const x = norm * 35
-          const y = norm * 55
-          planetCrimsonAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 5. Andromeda Galaxy: deep celestial background push (+18%) and subtle drift
-        if (andromedaAnchor) {
-          const scale = 1 + norm * 0.18
-          const y = norm * 40
-          andromedaAnchor.style.transform = `translate3d(0, ${y}px, 0) scale(${scale})`
-        }
-
-        // 6. Gargantua Supermassive Black Hole: zooms (+26%) with warped relativistic shift
-        if (blackHoleAnchor) {
-          const scale = 1 + norm * 0.26
-          const x = -norm * 25
-          const y = norm * 50
-          blackHoleAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 7. Sombrero Galaxy (NGC 4594): zooms (+22%) and drifts
-        if (sombreroAnchor) {
-          const scale = 1 + norm * 0.22
-          const x = norm * 30
-          const y = -norm * 35
-          sombreroAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
-        }
-
-        // 8. Asteroid Belt: moves dynamically on parallax plane
-        if (asteroidsAnchor) {
-          const x = -norm * 50
-          const y = -norm * 40
-          asteroidsAnchor.style.transform = `translate3d(${x}px, ${y}px, 0)`
-        }
+      if (reduced) {
+        parallaxRafId = 0
+        return
       }
-      parallaxRafId = requestAnimationFrame(renderParallax)
+      currentScroll += (targetScroll - currentScroll) * 0.085
+      const norm = Math.min(2.0, currentScroll / 450)
+
+      // 1. Gas Giant (Foreground Supergiant): aggressive 3D push-in zoom (+48%) + downward drift
+      if (planetGasGiantAnchor) {
+        const scale = 1 + norm * 0.48
+        const x = -norm * 45
+        const y = norm * 90
+        planetGasGiantAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 2. Saturn (Bottom-Left Ringed Giant): zooms (+42%) and glides upward into view
+      if (planetSaturnAnchor) {
+        const scale = 1 + norm * 0.42
+        const x = norm * 40
+        const y = -norm * 85
+        planetSaturnAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 3. Exo-Earth (Oceanic Jewel): zooms (+38%) and floats upward with majestic presence
+      if (planetExoEarthAnchor) {
+        const scale = 1 + norm * 0.38
+        const x = -norm * 35
+        const y = -norm * 75
+        planetExoEarthAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 4. Crimson Dwarf World: zooms (+34%) and pans diagonally
+      if (planetCrimsonAnchor) {
+        const scale = 1 + norm * 0.34
+        const x = norm * 35
+        const y = norm * 55
+        planetCrimsonAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 5. Andromeda Galaxy: deep celestial background push (+18%) and subtle drift
+      if (andromedaAnchor) {
+        const scale = 1 + norm * 0.18
+        const y = norm * 40
+        andromedaAnchor.style.transform = `translate3d(0, ${y}px, 0) scale(${scale})`
+      }
+
+      // 6. Gargantua Supermassive Black Hole: zooms (+26%) with warped relativistic shift
+      if (blackHoleAnchor) {
+        const scale = 1 + norm * 0.26
+        const x = -norm * 25
+        const y = norm * 50
+        blackHoleAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 7. Sombrero Galaxy (NGC 4594): zooms (+22%) and drifts
+      if (sombreroAnchor) {
+        const scale = 1 + norm * 0.22
+        const x = norm * 30
+        const y = -norm * 35
+        sombreroAnchor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`
+      }
+
+      // 8. Asteroid Belt: moves dynamically on parallax plane
+      if (asteroidsAnchor) {
+        const x = -norm * 50
+        const y = -norm * 40
+        asteroidsAnchor.style.transform = `translate3d(${x}px, ${y}px, 0)`
+      }
+
+      if (Math.abs(targetScroll - currentScroll) > 0.1) {
+        parallaxRafId = requestAnimationFrame(renderParallax)
+      } else {
+        parallaxRafId = 0
+      }
     }
-    renderParallax()
+    if (!reduced) {
+      renderParallax()
+    }
 
     if (reduced) return
 
