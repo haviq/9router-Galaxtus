@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import Badge from '../../lib/ui/Badge.svelte'
   import Card from '../../lib/ui/Card.svelte'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
@@ -6,6 +7,7 @@
     fmt,
     timeAgo,
     providerDisplayName,
+    providerRoutingPrefix,
     TABLE_OPTIONS,
     type StatsData,
     type TableView,
@@ -13,11 +15,126 @@
     type UsageItem
   } from './types'
   import { costIn } from '../../lib/currency.svelte'
+  import { api, type ProviderConnection } from '../../api/client'
+  import { getQuotaCache, setQuotaCache, parseQuotaData, type QuotaEntry } from '../quota/types'
+  import { copyToClipboard } from '../../lib/clipboard'
 
   let { stats = {} }: { stats?: StatsData } = $props()
 
   let tableView = $state<TableView>('model')
   let viewMode = $state<ViewMode>('costs')
+  let connections = $state<ProviderConnection[]>([])
+  let quotaCache = $state<Record<string, QuotaEntry>>({})
+  let balanceLoading = $state<Record<string, boolean>>({})
+  let copiedPrefix = $state<string | null>(null)
+
+  function copyPrefix(prefix: string) {
+    copyToClipboard(prefix)
+    copiedPrefix = prefix
+    setTimeout(() => {
+      if (copiedPrefix === prefix) copiedPrefix = null
+    }, 1500)
+  }
+
+  onMount(async () => {
+    quotaCache = getQuotaCache()
+    try {
+      const res = await api.getProvidersClient()
+      if (res && Array.isArray(res.connections)) {
+        connections = res.connections
+      }
+    } catch {
+      // quiet fallback
+    }
+  })
+
+  async function refreshProviderBalance(connId: string) {
+    if (balanceLoading[connId]) return
+    balanceLoading = { ...balanceLoading, [connId]: true }
+    try {
+      const res = await api.getConnectionUsage(connId, true)
+      const conn = connections.find((c) => c.id === connId)
+      const prov = conn?.provider || ''
+      const entry: QuotaEntry = {
+        quotas: parseQuotaData(prov, res),
+        plan: res?.plan || null,
+        message: res?.message || null,
+        raw: res,
+      }
+      setQuotaCache(connId, entry)
+      quotaCache = getQuotaCache()
+    } catch (e) {
+      console.error('Failed to refresh provider balance:', e)
+    } finally {
+      balanceLoading = { ...balanceLoading, [connId]: false }
+    }
+  }
+
+  function getProviderBalance(providerId: string) {
+    const prov = (providerId || '').toLowerCase().trim()
+    const conn = connections.find((c) => (c.provider || '').toLowerCase() === prov)
+    if (!conn) {
+      return { hasData: false, isCreditBalance: false, balanceText: '', detailText: '', color: '', connectionId: undefined, loading: false }
+    }
+    const connId = conn.id
+    const isLoading = !!balanceLoading[connId]
+    const cached = quotaCache[connId]
+    if (!cached || !cached.quotas || cached.quotas.length === 0) {
+      return { hasData: false, isCreditBalance: false, balanceText: '', detailText: '', color: '', connectionId: connId, loading: isLoading }
+    }
+
+    const creditQ = cached.quotas.find((q) => q.isCreditBalance || (q.name && q.name.toLowerCase().includes('balance')))
+    if (creditQ) {
+      const cur = creditQ.currency || 'USD'
+      const tot = typeof creditQ.total === 'number' ? creditQ.total : 0
+      const isPositive = tot > 0
+      return {
+        hasData: true,
+        isCreditBalance: true,
+        balanceText: `$${tot.toFixed(2)} ${cur}`,
+        detailText: 'Sisa Saldo',
+        color: isPositive ? 'text-blue-400 font-bold' : 'text-red-400 font-bold',
+        connectionId: connId,
+        loading: isLoading,
+      }
+    }
+
+    const firstQ = cached.quotas[0]
+    if (firstQ.unlimited) {
+      return {
+        hasData: true,
+        isCreditBalance: false,
+        balanceText: 'Unlimited',
+        detailText: `${firstQ.used ?? 0} used`,
+        color: 'text-green-400 font-bold',
+        connectionId: connId,
+        loading: isLoading,
+      }
+    }
+
+    const pct = firstQ.remainingPercentage ?? (firstQ.total > 0 ? Math.round(((firstQ.total - firstQ.used) / firstQ.total) * 100) : null)
+    if (pct != null) {
+      return {
+        hasData: true,
+        isCreditBalance: false,
+        balanceText: `${pct}%`,
+        detailText: `${firstQ.used ?? 0} / ${firstQ.total ?? '∞'} used`,
+        color: pct > 30 ? 'text-green-400 font-bold' : 'text-amber-400 font-bold',
+        connectionId: connId,
+        loading: isLoading,
+      }
+    }
+
+    return {
+      hasData: true,
+      isCreditBalance: false,
+      balanceText: firstQ.name || 'Active',
+      detailText: '',
+      color: 'text-text-main',
+      connectionId: connId,
+      loading: isLoading,
+    }
+  }
 
   // Every column of the breakdown table is sortable: click a header for that
   // column, click it again to reverse. The default (requests, descending) is
@@ -82,12 +199,14 @@
 
     const rows = Object.entries(sourceMap).map(([key, item]) => {
       const totalTokens = (item.promptTokens || 0) + (item.completionTokens || 0)
+      const prov = tableView === 'provider' ? item.provider || key : item.provider
       return {
         key,
         ...item,
         // The provider breakdown carries no provider field of its own (the key
         // is the provider), so fill it in: the artwork and badge read it.
-        provider: tableView === 'provider' ? item.provider || key : item.provider,
+        provider: prov,
+        prefix: item.prefix || providerRoutingPrefix(prov),
         label: rowLabel(tableView, key, item),
         totalTokens,
       }
@@ -199,6 +318,13 @@
                   <span class="text-[9px]">{arrow('name')}</span>
                 </button>
               </th>
+              {#if tableView === 'provider'}
+                <th class="py-3 px-4 text-left">
+                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                    Sisa Saldo / Quota
+                  </span>
+                </th>
+              {/if}
               {#if tableView !== 'provider'}
                 <th class="py-3 px-4" aria-sort={sortKey === 'provider' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" class={headerClass('provider')} onclick={() => toggleSort('provider')}>
@@ -260,9 +386,73 @@
                         class="w-4 h-4 object-contain rounded shrink-0 bg-surface-2 p-0.5 border border-border/40 text-[9px] leading-none font-semibold"
                       />
                     {/if}
-                    <span class="truncate">{row.label}</span>
+                    <span class="truncate font-semibold">{row.label}</span>
+                    {#if tableView === 'provider'}
+                      {@const prefix = row.prefix || providerRoutingPrefix(row.provider || row.key)}
+                      {#if prefix}
+                        <button
+                          type="button"
+                          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-500/15 text-brand-400 border border-brand-500/30 hover:bg-brand-500/25 transition-colors cursor-pointer shadow-xs"
+                          title="Routing prefix {prefix}<model> (Click to copy)"
+                          onclick={(e) => {
+                            e.stopPropagation()
+                            copyPrefix(prefix)
+                          }}
+                        >
+                          <span>{prefix}</span>
+                          {#if copiedPrefix === prefix}
+                            <span class="text-[9px] text-green-400 font-sans font-normal">copied!</span>
+                          {/if}
+                        </button>
+                      {/if}
+                    {/if}
                   </div>
                 </td>
+                {#if tableView === 'provider'}
+                  {@const bal = getProviderBalance(row.provider || row.key)}
+                  <td class="py-3 px-4 text-left">
+                    {#if bal.loading}
+                      <span class="inline-flex items-center gap-1.5 text-[11px] text-text-muted">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-500 animate-ping"></span>
+                        Checking...
+                      </span>
+                    {:else if bal.hasData}
+                      <div class="inline-flex items-center gap-2">
+                        <div class="flex flex-col min-w-0">
+                          <span class="font-mono text-xs font-bold {bal.color}">
+                            {bal.balanceText}
+                          </span>
+                          {#if bal.detailText}
+                            <span class="text-[10px] text-text-muted truncate">
+                              {bal.detailText}
+                            </span>
+                          {/if}
+                        </div>
+                        {#if bal.connectionId}
+                          <button
+                            type="button"
+                            class="text-[10px] text-text-muted hover:text-brand-400 transition-colors p-1 rounded hover:bg-surface-2 cursor-pointer"
+                            title="Refresh live saldo"
+                            onclick={() => refreshProviderBalance(bal.connectionId!)}
+                          >
+                            ↻
+                          </button>
+                        {/if}
+                      </div>
+                    {:else if bal.connectionId}
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-surface-2 text-text-muted hover:text-text-main border border-border/60 hover:border-brand-500/40 transition-colors cursor-pointer"
+                        onclick={() => refreshProviderBalance(bal.connectionId!)}
+                      >
+                        <span>Check Saldo</span>
+                        <span class="text-[10px]">↻</span>
+                      </button>
+                    {:else}
+                      <span class="text-text-muted text-xs">—</span>
+                    {/if}
+                  </td>
+                {/if}
                 {#if tableView !== 'provider'}
                   <td class="py-3 px-4">
                     <div class="flex items-center gap-1.5">

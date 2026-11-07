@@ -111,3 +111,4 @@ func TestDetectRefusalInPayload(t *testing.T) {
 		t.Errorf("good non-streaming payload should not be flagged as refusal")
 	}
 }
+

@@ -85,3 +85,4 @@ func TestFirstTokenAndMask(t *testing.T) {
 		t.Errorf("MaskToken got %q, want sk-1...6789", masked)
 	}
 }
+

@@ -72,6 +72,10 @@ func fetchProviderUsage(ctx context.Context, provider string, data map[string]an
 	switch provider {
 	case "deepseek":
 		return fetchDeepseekUsage(ctx, apiKey), true
+	case "river":
+		return fetchRiverUsage(ctx, apiKey, connectionBaseURL(data)), true
+	case "openrouter":
+		return fetchOpenRouterUsage(ctx, apiKey), true
 	case "groq":
 		return fetchGroqUsage(ctx, apiKey), true
 	case "commandcode":
@@ -413,6 +417,160 @@ func firstNonEmptyAny(vals ...any) any {
 		}
 	}
 	return nil
+}
+
+// ---------- river: live credit balance & quota ----------
+
+func fetchRiverUsage(ctx context.Context, apiKey string, baseURL string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "River API key not available. Add a key to view usage."}
+	}
+	rawBase := strings.TrimSpace(baseURL)
+	if rawBase == "" {
+		rawBase = "https://api.modelriver.com/v1"
+	}
+	rawBase = strings.TrimSuffix(rawBase, "/chat/completions")
+	rawBase = strings.TrimSuffix(rawBase, "/completions")
+	rawBase = strings.TrimRight(rawBase, "/")
+
+	endpoints := []string{
+		rawBase + "/user/balance",
+		rawBase + "/dashboard/billing/credit_grants",
+		rawBase + "/credits",
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+
+	for _, ep := range endpoints {
+		status, _, out, err := usageGet(ctx, ep, headers)
+		if err != nil || status < 200 || status >= 300 {
+			continue
+		}
+		data := usageJSON(out)
+		if data == nil {
+			continue
+		}
+
+		quotas := map[string]any{}
+		if list, ok := data["balance_infos"].([]any); ok && len(list) > 0 {
+			for _, item := range list {
+				if m, ok := item.(map[string]any); ok {
+					cur := strings.ToUpper(strings.TrimSpace(usageStr(m["currency"])))
+					if cur == "" {
+						cur = "USD"
+					}
+					total := math.Max(0, usageNum(firstNonEmptyAny(m["total_balance"], m["totalBalance"], m["balance"]), 0))
+					quotas[fmt.Sprintf("Balance (%s)", cur)] = map[string]any{
+						"used": 0, "total": total, "remainingPercentage": 100.0,
+						"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": cur,
+					}
+				}
+			}
+		} else if totalAvail := usageNum(firstNonEmptyAny(data["total_available"], data["totalAvailable"]), -1); totalAvail >= 0 {
+			quotas["Balance (USD)"] = map[string]any{
+				"used": 0, "total": totalAvail, "remainingPercentage": 100.0,
+				"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+			}
+		} else if d, ok := data["data"].(map[string]any); ok {
+			bal := usageNum(firstNonEmptyAny(d["total_credits"], d["credits"], d["balance"], d["limit_remaining"]), -1)
+			if bal >= 0 {
+				quotas["Balance (USD)"] = map[string]any{
+					"used": 0, "total": bal, "remainingPercentage": 100.0,
+					"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+				}
+			}
+		} else {
+			bal := usageNum(firstNonEmptyAny(data["total_credits"], data["credits"], data["balance"], data["totalBalance"]), -1)
+			if bal >= 0 {
+				quotas["Balance (USD)"] = map[string]any{
+					"used": 0, "total": bal, "remainingPercentage": 100.0,
+					"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+				}
+			}
+		}
+
+		if len(quotas) > 0 {
+			return usageResult{plan: "River", quotas: quotas}
+		}
+	}
+
+	return usageResult{plan: "River", quotas: map[string]any{
+		"Active (Pay-as-you-go)": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- openrouter: live credit balance & key limits ----------
+
+func fetchOpenRouterUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "OpenRouter API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://openrouter.ai/api/v1/credits", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if d, ok := data["data"].(map[string]any); ok {
+			totalCredits := usageNum(d["total_credits"], 0)
+			totalUsage := usageNum(d["total_usage"], 0)
+			balance := math.Max(0, totalCredits-totalUsage)
+			remPct := 100.0
+			if totalCredits > 0 {
+				remPct = math.Round((balance / totalCredits) * 100)
+			}
+			return usageResult{
+				plan: "OpenRouter",
+				quotas: map[string]any{
+					"Balance (USD)": map[string]any{
+						"used": totalUsage, "total": balance, "remainingPercentage": remPct,
+						"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+					},
+				},
+			}
+		}
+	}
+
+	status, _, out, err = usageGet(ctx, "https://openrouter.ai/api/v1/auth/key", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if d, ok := data["data"].(map[string]any); ok {
+			usage := usageNum(d["usage"], 0)
+			limit := usageNum(d["limit"], 0)
+			rem := usageNum(d["limit_remaining"], 0)
+			quotas := map[string]any{}
+			if limit > 0 {
+				remPct := 100.0
+				if limit > 0 {
+					remPct = math.Round((rem / limit) * 100)
+				}
+				quotas["Credit Limit (USD)"] = map[string]any{
+					"used": usage, "total": rem, "remainingPercentage": remPct,
+					"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+				}
+			} else {
+				quotas["Usage (USD)"] = map[string]any{
+					"used": usage, "total": 0, "remainingPercentage": 100.0,
+					"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+				}
+			}
+			return usageResult{plan: "OpenRouter", quotas: quotas}
+		}
+	}
+
+	return usageResult{plan: "OpenRouter", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
 }
 
 // ---------- groq: rate-limit headers on GET /openai/v1/models ----------

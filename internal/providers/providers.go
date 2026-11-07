@@ -417,6 +417,11 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	"river": {
+		BaseURL:    "https://api.modelriver.com/v1/chat/completions",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	"deepseek": {
 		BaseURL:    "https://api.deepseek.com/chat/completions",
 		AuthHeader: "Authorization",

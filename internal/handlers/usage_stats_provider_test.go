@@ -106,3 +106,48 @@ func TestHandleUsageStats_DailyByProviderHasNoLastUsed(t *testing.T) {
 		t.Errorf("lastUsed = %q, want empty for a daily window", item.LastUsed)
 	}
 }
+
+func TestHandleUsageStats_ByProviderCarriesPrefix(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	dailyJSON := `{
+		"byProvider": {
+			"river": {"requests": 3, "promptTokens": 60, "completionTokens": 30, "cost": 0.001},
+			"deepseek": {"requests": 2, "promptTokens": 40, "completionTokens": 20, "cost": 0.0005}
+		}
+	}`
+	if _, err := database.Exec(`INSERT INTO usageDaily (dateKey, data) VALUES ('2026-10-14', ?)`, dailyJSON); err != nil {
+		t.Fatalf("seed usageDaily: %v", err)
+	}
+
+	handler := HandleUsageStats(db.NewRepo(database))
+	req := httptest.NewRequest(http.MethodGet, "/api/usage/stats?period=7d", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp UsageStatsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	riverItem, ok := resp.ByProvider["river"]
+	if !ok {
+		t.Fatalf("missing river in byProvider: %v", resp.ByProvider)
+	}
+	if riverItem.Prefix != "rv" {
+		t.Errorf("river prefix = %q, want rv", riverItem.Prefix)
+	}
+
+	dsItem, ok := resp.ByProvider["deepseek"]
+	if !ok {
+		t.Fatalf("missing deepseek in byProvider: %v", resp.ByProvider)
+	}
+	if dsItem.Prefix != "ds" {
+		t.Errorf("deepseek prefix = %q, want ds", dsItem.Prefix)
+	}
+}

@@ -29,6 +29,7 @@ export interface UsageItem {
   endpoint?: string
   provider?: string
   key?: string
+  prefix?: string
 }
 
 export interface RecentRequestItem {
@@ -187,6 +188,14 @@ export function providerDisplayName(
   if (node?.name) return node.name
   const cat = PROVIDER_CATALOG.find((p) => p.id === id || p.alias === id)
   return cat?.name || id
+}
+
+export function providerRoutingPrefix(providerId?: string | null): string {
+  const id = (providerId || '').trim()
+  if (!id) return ''
+  const cat = PROVIDER_CATALOG.find((p) => p.id === id || p.alias === id)
+  if (cat?.alias) return `${cat.alias}/`
+  return `${id}/`
 }
 
 export function fmt(n?: number): string {

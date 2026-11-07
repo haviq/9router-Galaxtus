@@ -3,6 +3,7 @@ package handlers
 import (
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlerutil"
+	"9router/proxy/internal/providers"
 	"9router/proxy/internal/translator"
 	"9router/proxy/internal/usagetracker"
 	"database/sql"
@@ -97,6 +98,7 @@ type ProviderUsageItem struct {
 	// cannot fill it (a usageDaily row is keyed by date and carries no time),
 	// so the dashboard renders it blank there rather than inventing midnight.
 	LastUsed string `json:"lastUsed,omitempty"`
+	Prefix   string `json:"prefix,omitempty"`
 }
 
 type ModelUsageItem struct {
@@ -471,8 +473,10 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames)
 		}
 
-		// Calculate total aggregates from byProvider
-		for _, p := range resp.ByProvider {
+		// Calculate total aggregates from byProvider and attach canonical routing prefix
+		for prov, p := range resp.ByProvider {
+			p.Prefix = providers.GetProviderAlias(prov)
+			resp.ByProvider[prov] = p
 			resp.TotalRequests += p.Requests
 			resp.TotalPromptTokens += p.PromptTokens
 			resp.TotalCompletionTokens += p.CompletionTokens

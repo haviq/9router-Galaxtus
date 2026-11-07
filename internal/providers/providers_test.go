@@ -310,6 +310,15 @@ func TestNewProvidersRegistry_v060(t *testing.T) {
 	if got := RegistryAliases["openadapter"]; got != "oad" {
 		t.Errorf("RegistryAliases[openadapter] = %q, want oad", got)
 	}
+	if got := RegistryAliases["river"]; got != "rv" {
+		t.Errorf("RegistryAliases[river] = %q, want rv", got)
+	}
+	if got := ResolveAlias("rv"); got != "river" {
+		t.Errorf("ResolveAlias(rv) = %q, want river", got)
+	}
+	if got := ResolveAlias("modelriver"); got != "river" {
+		t.Errorf("ResolveAlias(modelriver) = %q, want river", got)
+	}
 
 	// Verify models are registered for each provider
 	expectedModel := map[string]string{

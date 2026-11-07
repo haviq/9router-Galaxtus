@@ -177,3 +177,38 @@ func TestUsageDo_SendsNonGoUserAgent(t *testing.T) {
 		})
 	}
 }
+
+func TestFetchRiverUsage_BalanceParsing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/user/balance" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"balance_infos":[{"currency":"USD","total_balance":45.25}]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	res := fetchRiverUsage(t.Context(), "sk-river-test-key", srv.URL+"/v1")
+	if res.plan != "River" {
+		t.Fatalf("expected plan River, got %q", res.plan)
+	}
+	q, ok := res.quotas["Balance (USD)"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Balance (USD) quota, got %+v", res.quotas)
+	}
+	if q["isCreditBalance"] != true {
+		t.Errorf("expected isCreditBalance true, got %v", q["isCreditBalance"])
+	}
+	if total, _ := q["total"].(float64); total != 45.25 {
+		t.Errorf("expected total 45.25, got %v", total)
+	}
+}
+
+func TestFetchOpenRouterUsage_CreditsParsing(t *testing.T) {
+	// Without key, expect error message
+	res := fetchOpenRouterUsage(t.Context(), "")
+	if res.message == "" {
+		t.Errorf("expected error message for empty key")
+	}
+}
