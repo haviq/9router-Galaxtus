@@ -443,6 +443,13 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	// OmniRush — OmniRush AI frontier coding & reasoning platform (omnirush.ai).
+	// Serves frontier models gpt-6-astra, gpt-6.1-sol, gpt-6-sol via OpenAI-compatible endpoints.
+	"omnirush": {
+		BaseURL:    "https://omnirush.ai/omnirush/v1/chat/completions",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	"groq": {
 		BaseURL:    "https://api.groq.com/openai/v1/chat/completions",
 		AuthHeader: "Authorization",

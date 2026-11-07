@@ -155,6 +155,26 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     ]
   },
   {
+    "id": "omnirush",
+    "name": "OmniRush AI",
+    "category": "apikey",
+    "alias": "omnirush",
+    "color": "#7C3AED",
+    "icon": "/providers/omnirush.svg",
+    "website": "https://omnirush.ai",
+    "notice": {
+      "text": "OpenAI-compatible frontier reasoning and autonomous coding models from OmniRush AI (gpt-6-astra, gpt-6.1-sol, gpt-6-sol). Accepts an OmniRush Bearer API Token or session key.",
+      "apiKeyUrl": "https://omnirush.ai",
+      "signupUrl": "https://omnirush.ai"
+    },
+    "modelsFetcher": {"url": "https://omnirush.ai/omnirush/v1/models", "type": "openai"},
+    "authType": "apikey",
+    "noAuth": false,
+    "serviceKinds": [
+      "llm"
+    ]
+  },
+  {
     "id": "antigravity",
     "name": "Antigravity",
     "category": "oauth",

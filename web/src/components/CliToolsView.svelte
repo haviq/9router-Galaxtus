@@ -133,6 +133,26 @@
       ],
     },
     {
+      id: 'omnirush',
+      name: 'OmniRush CLI',
+      category: 'cli',
+      image: '/providers/omnirush.svg',
+      description: 'Autonomous terminal coding agent powered by 9router models',
+      color: '#7C3AED',
+      configType: 'env',
+      envVars: {
+        OPENAI_BASE_URL: `${localOrigin}/v1`,
+        OPENAI_API_KEY: snippetApiKey,
+      },
+      instructions: [
+        'Install OmniRush CLI globally: npm install -g omnirush',
+        'Configure your shell environment (~/.zshrc or ~/.bashrc):',
+        `export OPENAI_BASE_URL="${localOrigin}/v1"`,
+        `export OPENAI_API_KEY="${snippetApiKey}"`,
+        'Run omnirush in your project directory to code with 9router failover.',
+      ],
+    },
+    {
       id: 'cursor',
       name: 'Cursor IDE',
       category: 'ide',
