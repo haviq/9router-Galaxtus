@@ -36,12 +36,37 @@
     }, 1500)
   }
 
+  let isRefreshingAll = $state(false)
+
+  async function refreshAllBalances() {
+    if (isRefreshingAll || !connections.length) return
+    isRefreshingAll = true
+    try {
+      const tasks = connections.map(async (c) => {
+        try {
+          await refreshProviderBalance(c.id)
+        } catch {
+          // ignore individual network failure
+        }
+      })
+      await Promise.allSettled(tasks)
+    } finally {
+      isRefreshingAll = false
+    }
+  }
+
   onMount(async () => {
     quotaCache = getQuotaCache()
     try {
       const res = await api.getProvidersClient()
       if (res && Array.isArray(res.connections)) {
         connections = res.connections
+        // Probe uncached active providers in the background
+        for (const c of connections) {
+          if (!quotaCache[c.id]) {
+            refreshProviderBalance(c.id)
+          }
+        }
       }
     } catch {
       // quiet fallback
@@ -72,7 +97,12 @@
 
   function getProviderBalance(providerId: string) {
     const prov = (providerId || '').toLowerCase().trim()
-    const conn = connections.find((c) => (c.provider || '').toLowerCase() === prov)
+    const conn = connections.find((c) => {
+      const cp = (c.provider || '').toLowerCase()
+      const cid = (c.id || '').toLowerCase()
+      const cn = (c.name || '').toLowerCase()
+      return cp === prov || cid === prov || cn === prov || prov.includes(cp) || cp.includes(prov)
+    })
     if (!conn) {
       return { hasData: false, isCreditBalance: false, balanceText: '', detailText: '', color: '', connectionId: undefined, loading: false }
     }
@@ -83,7 +113,7 @@
       return { hasData: false, isCreditBalance: false, balanceText: '', detailText: '', color: '', connectionId: connId, loading: isLoading }
     }
 
-    const creditQ = cached.quotas.find((q) => q.isCreditBalance || (q.name && q.name.toLowerCase().includes('balance')))
+    const creditQ = cached.quotas.find((q) => q.isCreditBalance || (q.name && q.name.toLowerCase().includes('balance')) || (q.name && q.name.toLowerCase().includes('credit')))
     if (creditQ) {
       const cur = creditQ.currency || 'USD'
       const tot = typeof creditQ.total === 'number' ? creditQ.total : 0
@@ -91,7 +121,7 @@
       return {
         hasData: true,
         isCreditBalance: true,
-        balanceText: `$${tot.toFixed(2)} ${cur}`,
+        balanceText: `${cur === 'USD' ? '$' : ''}${tot.toFixed(2)} ${cur}`,
         detailText: 'Sisa Saldo',
         color: isPositive ? 'text-blue-400 font-bold' : 'text-red-400 font-bold',
         connectionId: connId,
@@ -320,9 +350,21 @@
               </th>
               {#if tableView === 'provider'}
                 <th class="py-3 px-4 text-left">
-                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                    Sisa Saldo / Quota
-                  </span>
+                  <div class="inline-flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                      Sisa Saldo / Quota
+                    </span>
+                    <button
+                      type="button"
+                      class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-brand-500/15 text-brand-400 border border-brand-500/30 hover:bg-brand-500/25 transition-colors cursor-pointer inline-flex items-center gap-1"
+                      title="Probe & refresh saldo semua provider"
+                      onclick={refreshAllBalances}
+                      disabled={isRefreshingAll}
+                    >
+                      <span class={isRefreshingAll ? 'animate-spin' : ''}>↻</span>
+                      <span>{isRefreshingAll ? 'Checking...' : 'Probe All'}</span>
+                    </button>
+                  </div>
                 </th>
               {/if}
               {#if tableView !== 'provider'}

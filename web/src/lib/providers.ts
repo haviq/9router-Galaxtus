@@ -170,6 +170,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "modelsFetcher": {"url": "https://omnirush.ai/omnirush/v1/models", "type": "openai"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm"
     ]
@@ -884,6 +885,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"text":"Free tier: 27+ free models, no credit card needed, 200 req/day. After  0 credit: 1,000 req/day.","apiKeyUrl":"https://openrouter.ai/settings/keys"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "priority": 10,
     "systemoneConfig": {
       "baseUrl": "https://openrouter.ai/api/v1/systemone",
@@ -1205,7 +1207,9 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "icon": "memory",
     "website": "https://www.cerebras.ai",
     "notice": {"apiKeyUrl":"https://cloud.cerebras.ai/platform"},
+    "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm"
     ]
@@ -1219,7 +1223,9 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "icon": "water_drop",
     "website": "https://chutes.ai",
     "notice": {"apiKeyUrl":"https://chutes.ai/app/api"},
+    "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm"
     ]
@@ -1419,6 +1425,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"apiKeyUrl":"https://fireworks.ai/account/api-keys"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm",
       "embedding"
@@ -1724,6 +1731,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"apiKeyUrl":"https://console.mistral.ai/api-keys"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm",
       "embedding"
@@ -1814,6 +1822,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"apiKeyUrl":"https://platform.openai.com/api-keys"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "priority": 30,
     "serviceKinds": [
       "llm",
@@ -1875,6 +1884,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"apiKeyUrl":"https://www.perplexity.ai/settings/api"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "priority": 180,
     "serviceKinds": [
       "llm",
@@ -2029,7 +2039,9 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "icon": "cloud_queue",
     "website": "https://cloud.siliconflow.com",
     "notice": {"apiKeyUrl":"https://cloud.siliconflow.com/account/ak"},
+    "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm",
       "image"
@@ -2111,6 +2123,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     "notice": {"apiKeyUrl":"https://api.together.xyz/settings/api-keys"},
     "authType": "apikey",
     "noAuth": false,
+    "usage": true,
     "serviceKinds": [
       "llm",
       "embedding"

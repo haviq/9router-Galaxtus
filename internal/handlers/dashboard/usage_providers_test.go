@@ -121,7 +121,7 @@ func TestIsUsageEligibleConnection(t *testing.T) {
 		{"codex", "oauth", true},
 		{"kimi", "apikey", true},
 		{"kimi", "oauth", true},
-		{"openai", "apikey", false},
+		{"openai", "apikey", true},
 		{"deepseek", "apikey", true},
 		{"comfyui", "apikey", false},
 	}
@@ -210,5 +210,95 @@ func TestFetchOpenRouterUsage_CreditsParsing(t *testing.T) {
 	res := fetchOpenRouterUsage(t.Context(), "")
 	if res.message == "" {
 		t.Errorf("expected error message for empty key")
+	}
+}
+
+func TestExtractUniversalBalance(t *testing.T) {
+	// 1. balance_infos style
+	d1 := map[string]any{
+		"balance_infos": []any{
+			map[string]any{"currency": "USD", "total_balance": 18.75},
+		},
+	}
+	bal, _, cur, ok := extractUniversalBalance(d1)
+	if !ok || bal != 18.75 || cur != "USD" {
+		t.Errorf("d1 failed: got %v, %v, %v", bal, cur, ok)
+	}
+
+	// 2. nested data style
+	d2 := map[string]any{
+		"data": map[string]any{
+			"total_credits": 50.0,
+			"total_usage":   10.0,
+		},
+	}
+	bal, used, _, ok := extractUniversalBalance(d2)
+	if !ok || bal != 50.0 || used != 10.0 {
+		t.Errorf("d2 failed: got %v, %v, %v", bal, used, ok)
+	}
+
+	// 3. direct credit_balance style
+	d3 := map[string]any{
+		"credit_balance": 33.5,
+	}
+	bal, _, _, ok = extractUniversalBalance(d3)
+	if !ok || bal != 33.5 {
+		t.Errorf("d3 failed: got %v, %v", bal, ok)
+	}
+}
+
+func TestFetchOpenAIUsage_CreditGrants(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/dashboard/billing/credit_grants" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{
+				"object": "credit_summary",
+				"total_granted": 100.0,
+				"total_used": 20.0,
+				"total_available": 80.0
+			}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	res := fetchOpenAIUsage(t.Context(), "sk-test-openai", srv.URL)
+	if !strings.Contains(res.plan, "OpenAI") {
+		t.Errorf("expected OpenAI plan, got %q", res.plan)
+	}
+	q, ok := res.quotas["Balance (USD)"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Balance (USD) quota, got %+v", res.quotas)
+	}
+	if q["isCreditBalance"] != true {
+		t.Errorf("expected isCreditBalance true")
+	}
+	if total, _ := q["total"].(float64); total != 80.0 {
+		t.Errorf("expected total 80.0, got %v", total)
+	}
+}
+
+func TestProbeGenericApiKeyBalance(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/balance" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"balance": 42.0, "currency": "USD"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	res, ok := probeGenericApiKeyBalance(t.Context(), "custom-provider", "sk-custom", srv.URL)
+	if !ok {
+		t.Fatalf("expected probeGenericApiKeyBalance to succeed")
+	}
+	q, ok := res.quotas["Balance (USD)"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Balance (USD) quota, got %+v", res.quotas)
+	}
+	if q["total"] != 42.0 {
+		t.Errorf("expected 42.0, got %v", q["total"])
 	}
 }

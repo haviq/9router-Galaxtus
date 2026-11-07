@@ -135,23 +135,26 @@ const (
 )
 
 // usageSupportedProviders mirrors upstream USAGE_SUPPORTED_PROVIDERS
-// (registry features.usage).
+// (registry features.usage) + 9router extended live saldo probes.
 var usageSupportedProviders = []string{
-	"antigravity", "claude", "codebuddy-cn", "codebuddy-intl", "codex",
-	"commandcode", "deepseek", "gemini-cli", "gemini-web", "github", "glm", "glm-cn",
+	"antigravity", "cerebras", "cerebras-ai", "chutes", "chutes-ai", "claude", "codebuddy-cn", "codebuddy-intl", "codex",
+	"commandcode", "deepinfra", "deepseek", "fireworks", "fireworks-ai", "gemini-cli", "gemini-web", "github", "glm", "glm-cn",
 	"grok-cli", "groq", "kimi", "kiro", "minimax", "minimax-cn", "minimax-code",
-	"minimax-code-global", "ollama",
-	"opencode-go", "opencode-zen", "qoder", "qoder-cn", "trae",
-	"vercel-ai-gateway", "xiaomi-mimo", "zed",
+	"minimax-code-global", "mistral", "mistral-ai", "codestral", "novita", "novita-ai", "ollama",
+	"omnirush", "omnirush-ai", "opencode-go", "opencode-zen", "openai", "openai-chat", "openai-compatible", "openrouter",
+	"perplexity", "qoder", "qoder-cn", "river", "siliconflow", "silicon", "together", "together-ai", "trae",
+	"vercel-ai-gateway", "xiaomi-mimo", "zed", "custom",
 }
 
 // usageApikeyProviders mirrors upstream USAGE_APIKEY_PROVIDERS
-// (registry features.usageApikey).
+// (registry features.usageApikey) + 9router extended live saldo probes.
 var usageApikeyProviders = []string{
-	"codebuddy-cn", "codebuddy-intl", "commandcode", "deepseek", "gemini-web", "glm",
-	"glm-cn", "groq", "kimi", "kiro", "minimax", "minimax-cn", "ollama",
-	"opencode-go", "opencode-zen", "qoder", "qoder-cn", "vercel-ai-gateway",
-	"xiaomi-mimo",
+	"cerebras", "cerebras-ai", "chutes", "chutes-ai", "codebuddy-cn", "codebuddy-intl", "commandcode", "deepinfra",
+	"deepseek", "fireworks", "fireworks-ai", "gemini-web", "glm", "glm-cn", "groq", "kimi", "kiro",
+	"minimax", "minimax-cn", "mistral", "mistral-ai", "codestral", "novita", "novita-ai", "ollama",
+	"omnirush", "omnirush-ai", "opencode-go", "opencode-zen", "openai", "openai-chat", "openai-compatible",
+	"openrouter", "perplexity", "qoder", "qoder-cn", "river", "siliconflow", "silicon", "together", "together-ai",
+	"vercel-ai-gateway", "xiaomi-mimo", "custom",
 }
 
 func strSliceContains(list []string, v string) bool {
@@ -164,6 +167,9 @@ func strSliceContains(list []string, v string) bool {
 }
 
 func isUsageEligibleConnection(c *models.ProviderConnection) bool {
+	if c == nil {
+		return false
+	}
 	if !strSliceContains(usageSupportedProviders, c.Provider) {
 		return false
 	}

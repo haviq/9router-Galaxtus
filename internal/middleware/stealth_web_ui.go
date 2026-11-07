@@ -3,6 +3,7 @@ package middleware
 import (
 	"9router/proxy/internal/auth"
 	"9router/proxy/internal/db"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -17,6 +18,7 @@ import (
 // 3. Requests presenting a matching bypass key in query parameter (?key=..., ?admin_key=..., ?portal_key=...)
 //    or header (X-Portal-Key, X-Admin-Key)
 // 4. Requests with an active 9r_stealth_bypass cookie minted by a previous valid bypass key
+// 5. Direct local developer on loopback (localhost, 127.0.0.1, [::1])
 func StealthWebUIGate(repo *db.Repo, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		settings, err := repo.GetSettings()
@@ -38,7 +40,14 @@ func StealthWebUIGate(repo *db.Repo, next http.Handler) http.Handler {
 		}
 
 		// Admitted: direct local developer on loopback with no external proxy headers
-		isDirectLocal := (strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1") || strings.HasPrefix(r.Host, "[::1]")) &&
+		remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if remoteIP == "" {
+			remoteIP = r.RemoteAddr
+		}
+		ip := net.ParseIP(remoteIP)
+		isLoopbackIP := ip != nil && ip.IsLoopback()
+		hostIsLocal := strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1") || strings.HasPrefix(r.Host, "[::1]")
+		isDirectLocal := (isLoopbackIP || hostIsLocal) &&
 			r.Header.Get("X-Forwarded-For") == "" &&
 			r.Header.Get("CF-Connecting-IP") == ""
 		if isDirectLocal {

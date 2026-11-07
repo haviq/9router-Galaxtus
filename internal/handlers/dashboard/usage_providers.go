@@ -76,6 +76,28 @@ func fetchProviderUsage(ctx context.Context, provider string, data map[string]an
 		return fetchRiverUsage(ctx, apiKey, connectionBaseURL(data)), true
 	case "openrouter":
 		return fetchOpenRouterUsage(ctx, apiKey), true
+	case "openai", "openai-chat":
+		return fetchOpenAIUsage(ctx, apiKey, connectionBaseURL(data)), true
+	case "together", "together-ai":
+		return fetchTogetherUsage(ctx, apiKey), true
+	case "siliconflow", "silicon":
+		return fetchSiliconFlowUsage(ctx, apiKey), true
+	case "novita", "novita-ai":
+		return fetchNovitaUsage(ctx, apiKey), true
+	case "deepinfra":
+		return fetchDeepInfraUsage(ctx, apiKey), true
+	case "chutes", "chutes-ai":
+		return fetchChutesUsage(ctx, apiKey), true
+	case "fireworks", "fireworks-ai":
+		return fetchFireworksUsage(ctx, apiKey), true
+	case "cerebras", "cerebras-ai":
+		return fetchCerebrasUsage(ctx, apiKey), true
+	case "mistral", "mistral-ai", "codestral":
+		return fetchMistralUsage(ctx, apiKey), true
+	case "perplexity":
+		return fetchPerplexityUsage(ctx, apiKey), true
+	case "omnirush", "omnirush-ai":
+		return fetchOmnirushUsage(ctx, apiKey, connectionBaseURL(data)), true
 	case "groq":
 		return fetchGroqUsage(ctx, apiKey), true
 	case "commandcode":
@@ -94,8 +116,12 @@ func fetchProviderUsage(ctx context.Context, provider string, data map[string]an
 		return fetchGrokCliUsage(ctx, accessToken, psd), true
 	case "codex":
 		return fetchCodexUsage(ctx, firstNonEmptyStr(accessToken, apiKey)), true
-	case "claude":
-		return fetchClaudeUsage(ctx, firstNonEmptyStr(accessToken, apiKey)), true
+	case "claude", "anthropic":
+		token := firstNonEmptyStr(accessToken, apiKey)
+		if strings.HasPrefix(token, "sk-ant-") {
+			return fetchAnthropicUsage(ctx, token), true
+		}
+		return fetchClaudeUsage(ctx, token), true
 	case "gemini-web":
 		return fetchGeminiWebUsage(ctx, apiKey), true
 	case "opencode-zen":
@@ -105,6 +131,13 @@ func fetchProviderUsage(ctx context.Context, provider string, data map[string]an
 	case "glm", "glm-cn":
 		return fetchGLMUsage(ctx, provider, firstNonEmptyStr(apiKey, accessToken)), true
 	default:
+		cred := firstNonEmptyStr(apiKey, accessToken)
+		if strings.TrimSpace(cred) != "" {
+			res, ok := probeGenericApiKeyBalance(ctx, provider, cred, connectionBaseURL(data))
+			if ok {
+				return res, true
+			}
+		}
 		return usageResult{}, false
 	}
 }
@@ -571,6 +604,673 @@ func fetchOpenRouterUsage(ctx context.Context, apiKey string) usageResult {
 			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
 		},
 	}}
+}
+
+// ---------- openai: live credit grants, subscriptions, or rate-limits ----------
+
+func fetchOpenAIUsage(ctx context.Context, apiKey string, baseURL string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "OpenAI API key not available."}
+	}
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		base = "https://api.openai.com/v1"
+	}
+	base = strings.TrimSuffix(base, "/chat/completions")
+	base = strings.TrimSuffix(base, "/completions")
+	base = strings.TrimRight(base, "/")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+
+	// 1. Credit grants check
+	status, _, out, err := usageGet(ctx, base+"/dashboard/billing/credit_grants", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			totAvail := usageNum(firstNonEmptyAny(data["total_available"], data["totalAvailable"]), -1)
+			if totAvail >= 0 {
+				totGranted := usageNum(firstNonEmptyAny(data["total_granted"], data["totalGranted"]), totAvail)
+				totUsed := usageNum(firstNonEmptyAny(data["total_used"], data["totalUsed"]), math.Max(0, totGranted-totAvail))
+				remPct := 100.0
+				if totGranted > 0 {
+					remPct = math.Round((totAvail / totGranted) * 100)
+				}
+				return usageResult{
+					plan: "OpenAI (Credit Grants)",
+					quotas: map[string]any{
+						"Balance (USD)": map[string]any{
+							"used": totUsed, "total": totAvail, "remainingPercentage": remPct,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			}
+		}
+	}
+
+	// 2. Subscription check
+	status, _, out, err = usageGet(ctx, base+"/dashboard/billing/subscription", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			hardLimit := usageNum(data["hard_limit_usd"], 0)
+			softLimit := usageNum(data["soft_limit_usd"], 0)
+			hasPayMethod, _ := data["has_payment_method"].(bool)
+			planTitle := "OpenAI"
+			if planObj, ok := data["plan"].(map[string]any); ok {
+				if title, ok := planObj["title"].(string); ok && title != "" {
+					planTitle = "OpenAI (" + title + ")"
+				}
+			}
+			if hardLimit > 0 {
+				return usageResult{
+					plan: planTitle,
+					quotas: map[string]any{
+						"Credit Limit (USD)": map[string]any{
+							"used": softLimit, "total": hardLimit, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			} else if hasPayMethod {
+				return usageResult{
+					plan: planTitle,
+					quotas: map[string]any{
+						"Pay-as-you-go": map[string]any{
+							"used": 0, "total": 0, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+						},
+					},
+				}
+			}
+		}
+	}
+
+	// 3. Models check for project keys (extract rate-limit headers or verify valid key)
+	status, respHeaders, _, err := usageGet(ctx, base+"/models", headers)
+	if err == nil && status >= 200 && status < 300 {
+		quotas := map[string]any{}
+		if remReqStr := respHeaders.Get("x-ratelimit-remaining-requests"); remReqStr != "" {
+			remReq, _ := strconv.ParseFloat(remReqStr, 64)
+			limitReq, _ := strconv.ParseFloat(respHeaders.Get("x-ratelimit-limit-requests"), 64)
+			remPct := 100.0
+			if limitReq > 0 {
+				remPct = math.Round((remReq / limitReq) * 100)
+			}
+			quotas["Requests (RPM)"] = map[string]any{
+				"used": math.Max(0, limitReq-remReq), "total": limitReq, "remainingPercentage": remPct,
+				"resetAt": nil, "unlimited": false,
+			}
+		}
+		if remTokStr := respHeaders.Get("x-ratelimit-remaining-tokens"); remTokStr != "" {
+			remTok, _ := strconv.ParseFloat(remTokStr, 64)
+			limitTok, _ := strconv.ParseFloat(respHeaders.Get("x-ratelimit-limit-tokens"), 64)
+			remPct := 100.0
+			if limitTok > 0 {
+				remPct = math.Round((remTok / limitTok) * 100)
+			}
+			quotas["Tokens (TPM)"] = map[string]any{
+				"used": math.Max(0, limitTok-remTok), "total": limitTok, "remainingPercentage": remPct,
+				"resetAt": nil, "unlimited": false,
+			}
+		}
+		if len(quotas) > 0 {
+			return usageResult{plan: "OpenAI", quotas: quotas}
+		}
+		return usageResult{
+			plan: "OpenAI",
+			quotas: map[string]any{
+				"Active": map[string]any{
+					"used": 0, "total": 0, "remainingPercentage": 100.0,
+					"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+					"displayName": "API Key Active & Verified",
+				},
+			},
+		}
+	}
+
+	if status == 401 || status == 403 {
+		return usageResult{plan: "OpenAI", message: "OpenAI API key authentication failed."}
+	}
+	return usageResult{plan: "OpenAI", message: fmt.Sprintf("OpenAI status: %d", status)}
+}
+
+// ---------- anthropic: live rate-limits and token quotas ----------
+
+func fetchAnthropicUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "Anthropic API key not available."}
+	}
+	headers := map[string]string{
+		"x-api-key":         strings.TrimSpace(apiKey),
+		"anthropic-version": "2023-06-01",
+		"Accept":            "application/json",
+	}
+	status, respHeaders, _, err := usageGet(ctx, "https://api.anthropic.com/v1/models", headers)
+	if err != nil {
+		return usageResult{message: fmt.Sprintf("Anthropic error: %v", err)}
+	}
+	if status == 401 || status == 403 {
+		return usageResult{plan: "Anthropic", message: "Anthropic API key authentication failed."}
+	}
+	quotas := map[string]any{}
+	if remReqStr := respHeaders.Get("anthropic-ratelimit-requests-remaining"); remReqStr != "" {
+		remReq, _ := strconv.ParseFloat(remReqStr, 64)
+		limitReq, _ := strconv.ParseFloat(respHeaders.Get("anthropic-ratelimit-requests-limit"), 64)
+		remPct := 100.0
+		if limitReq > 0 {
+			remPct = math.Round((remReq / limitReq) * 100)
+		}
+		quotas["Requests (RPM)"] = map[string]any{
+			"used": math.Max(0, limitReq-remReq), "total": limitReq, "remainingPercentage": remPct,
+			"resetAt": nil, "unlimited": false,
+		}
+	}
+	if remTokStr := respHeaders.Get("anthropic-ratelimit-tokens-remaining"); remTokStr != "" {
+		remTok, _ := strconv.ParseFloat(remTokStr, 64)
+		limitTok, _ := strconv.ParseFloat(respHeaders.Get("anthropic-ratelimit-tokens-limit"), 64)
+		remPct := 100.0
+		if limitTok > 0 {
+			remPct = math.Round((remTok / limitTok) * 100)
+		}
+		quotas["Tokens (TPM)"] = map[string]any{
+			"used": math.Max(0, limitTok-remTok), "total": limitTok, "remainingPercentage": remPct,
+			"resetAt": nil, "unlimited": false,
+		}
+	}
+	if len(quotas) > 0 {
+		return usageResult{plan: "Anthropic", quotas: quotas}
+	}
+	return usageResult{
+		plan: "Anthropic",
+		quotas: map[string]any{
+			"Active": map[string]any{
+				"used": 0, "total": 0, "remainingPercentage": 100.0,
+				"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+				"displayName": "API Key Active & Verified",
+			},
+		},
+	}
+}
+
+// ---------- together: live credit balance ----------
+
+func fetchTogetherUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "Together AI API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://api.together.xyz/v1/users/me", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			bal := usageNum(firstNonEmptyAny(data["credit_balance"], data["creditBalance"], data["balance"]), -1)
+			if bal >= 0 {
+				return usageResult{
+					plan: "Together AI",
+					quotas: map[string]any{
+						"Balance (USD)": map[string]any{
+							"used": 0, "total": bal, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			}
+		}
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "Together AI", apiKey, "https://api.together.xyz/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Together AI", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- siliconflow: live balance (CNY/USD) ----------
+
+func fetchSiliconFlowUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "SiliconFlow API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://api.siliconflow.cn/v1/user/info", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if d, ok := data["data"].(map[string]any); ok {
+			bal := usageNum(firstNonEmptyAny(d["totalBalance"], d["balance"]), -1)
+			if bal >= 0 {
+				cur := "CNY"
+				if c, ok := d["currency"].(string); ok && c != "" {
+					cur = strings.ToUpper(c)
+				}
+				return usageResult{
+					plan: "SiliconFlow",
+					quotas: map[string]any{
+						fmt.Sprintf("Balance (%s)", cur): map[string]any{
+							"used": 0, "total": bal, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": cur,
+						},
+					},
+				}
+			}
+		}
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "SiliconFlow", apiKey, "https://api.siliconflow.cn/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "SiliconFlow", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- novita: live credit balance ----------
+
+func fetchNovitaUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "Novita AI API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://api.novita.ai/v3/user", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			bal := usageNum(firstNonEmptyAny(data["credit"], data["balance"]), -1)
+			if bal >= 0 {
+				return usageResult{
+					plan: "Novita AI",
+					quotas: map[string]any{
+						"Balance (USD)": map[string]any{
+							"used": 0, "total": bal, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			}
+		}
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "Novita AI", apiKey, "https://api.novita.ai/v3")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Novita AI", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- deepinfra: live credit balance ----------
+
+func fetchDeepInfraUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "DeepInfra API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://api.deepinfra.com/v1/user/balance", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			bal := usageNum(firstNonEmptyAny(data["balance"], data["credits"]), -1)
+			if bal >= 0 {
+				return usageResult{
+					plan: "DeepInfra",
+					quotas: map[string]any{
+						"Balance (USD)": map[string]any{
+							"used": 0, "total": bal, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			}
+		}
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "DeepInfra", apiKey, "https://api.deepinfra.com/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "DeepInfra", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- chutes: live credit balance ----------
+
+func fetchChutesUsage(ctx context.Context, apiKey string) usageResult {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{message: "Chutes API key not available."}
+	}
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+	status, _, out, err := usageGet(ctx, "https://api.chutes.ai/v1/credits", headers)
+	if err == nil && status >= 200 && status < 300 {
+		data := usageJSON(out)
+		if data != nil {
+			bal := usageNum(firstNonEmptyAny(data["credits"], data["balance"]), -1)
+			if bal >= 0 {
+				return usageResult{
+					plan: "Chutes",
+					quotas: map[string]any{
+						"Balance (USD)": map[string]any{
+							"used": 0, "total": bal, "remainingPercentage": 100.0,
+							"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": "USD",
+						},
+					},
+				}
+			}
+		}
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "Chutes", apiKey, "https://api.chutes.ai/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Chutes", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- fireworks: live account & model quotas ----------
+
+func fetchFireworksUsage(ctx context.Context, apiKey string) usageResult {
+	res, ok := probeGenericApiKeyBalance(ctx, "Fireworks", apiKey, "https://api.fireworks.ai/inference/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Fireworks", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- cerebras: rate limits on /v1/models ----------
+
+func fetchCerebrasUsage(ctx context.Context, apiKey string) usageResult {
+	res, ok := probeGenericApiKeyBalance(ctx, "Cerebras", apiKey, "https://api.cerebras.ai/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Cerebras", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- mistral: rate limits on /v1/models ----------
+
+func fetchMistralUsage(ctx context.Context, apiKey string) usageResult {
+	res, ok := probeGenericApiKeyBalance(ctx, "Mistral", apiKey, "https://api.mistral.ai/v1")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Mistral", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- perplexity: live balance & model quota ----------
+
+func fetchPerplexityUsage(ctx context.Context, apiKey string) usageResult {
+	res, ok := probeGenericApiKeyBalance(ctx, "Perplexity", apiKey, "https://api.perplexity.ai")
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Perplexity", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- omnirush: live balance & quota probe ----------
+
+func fetchOmnirushUsage(ctx context.Context, apiKey string, baseURL string) usageResult {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		base = "https://api.omnirush.ai/v1"
+	}
+	res, ok := probeGenericApiKeyBalance(ctx, "Omnirush", apiKey, base)
+	if ok {
+		return res
+	}
+	return usageResult{plan: "Omnirush", quotas: map[string]any{
+		"Active": map[string]any{
+			"used": 0, "total": 0, "remainingPercentage": 100.0,
+			"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+		},
+	}}
+}
+
+// ---------- UNIVERSAL LIVE BALANCE PROBE FOR ANY API KEY PROVIDER ----------
+
+// extractUniversalBalance recursively extracts numerical balance, used amounts,
+// and currency across known provider billing response patterns.
+func extractUniversalBalance(data map[string]any) (balance float64, used float64, currency string, ok bool) {
+	if data == nil {
+		return 0, 0, "", false
+	}
+
+	currency = "USD"
+	if c, ok := data["currency"].(string); ok && strings.TrimSpace(c) != "" {
+		currency = strings.ToUpper(strings.TrimSpace(c))
+	}
+
+	// 1. balance_infos array (DeepSeek / River / Reseller format)
+	if list, ok := data["balance_infos"].([]any); ok && len(list) > 0 {
+		for _, item := range list {
+			if m, ok := item.(map[string]any); ok {
+				if c, ok := m["currency"].(string); ok && strings.TrimSpace(c) != "" {
+					currency = strings.ToUpper(strings.TrimSpace(c))
+				}
+				b := usageNum(firstNonEmptyAny(m["total_balance"], m["totalBalance"], m["balance"]), -1)
+				if b >= 0 {
+					u := usageNum(firstNonEmptyAny(m["used_balance"], m["used"]), 0)
+					return b, u, currency, true
+				}
+			}
+		}
+	}
+
+	// 2. Direct keys at root
+	if b := usageNum(firstNonEmptyAny(data["total_available"], data["totalAvailable"]), -1); b >= 0 {
+		u := usageNum(firstNonEmptyAny(data["total_used"], data["totalUsed"]), 0)
+		return b, u, currency, true
+	}
+	if b := usageNum(firstNonEmptyAny(data["total_balance"], data["totalBalance"], data["available_balance"], data["availableBalance"], data["credit_balance"], data["creditBalance"]), -1); b >= 0 {
+		u := usageNum(firstNonEmptyAny(data["used_balance"], data["used"]), 0)
+		return b, u, currency, true
+	}
+	if b := usageNum(firstNonEmptyAny(data["total_credits"], data["totalCredits"], data["credits"], data["credit"], data["balance"], data["remaining_credit"], data["remainingCredit"], data["limit_remaining"]), -1); b >= 0 {
+		u := usageNum(firstNonEmptyAny(data["total_usage"], data["usage"], data["used"]), 0)
+		return b, u, currency, true
+	}
+
+	// 3. Nested object keys (data, result, user, account, wallet, billing)
+	for _, key := range []string{"data", "result", "user", "account", "wallet", "billing"} {
+		if sub, ok := data[key].(map[string]any); ok {
+			if b, u, c, found := extractUniversalBalance(sub); found {
+				if c != "" && c != "USD" {
+					currency = c
+				}
+				return b, u, currency, true
+			}
+		}
+	}
+
+	return 0, 0, "", false
+}
+
+// probeGenericApiKeyBalance queries standard API key billing and user balance endpoints
+// for any custom, proxy, reseller, or OpenAI-compatible provider.
+func probeGenericApiKeyBalance(ctx context.Context, provider string, apiKey string, baseURL string) (usageResult, bool) {
+	if strings.TrimSpace(apiKey) == "" {
+		return usageResult{}, false
+	}
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		switch provider {
+		case "together", "together-ai":
+			base = "https://api.together.xyz/v1"
+		case "siliconflow", "silicon":
+			base = "https://api.siliconflow.cn/v1"
+		case "novita", "novita-ai":
+			base = "https://api.novita.ai/v3"
+		case "deepinfra":
+			base = "https://api.deepinfra.com/v1"
+		case "chutes", "chutes-ai":
+			base = "https://api.chutes.ai/v1"
+		case "fireworks", "fireworks-ai":
+			base = "https://api.fireworks.ai/inference/v1"
+		case "cerebras", "cerebras-ai":
+			base = "https://api.cerebras.ai/v1"
+		case "mistral", "mistral-ai", "codestral":
+			base = "https://api.mistral.ai/v1"
+		case "perplexity":
+			base = "https://api.perplexity.ai"
+		case "omnirush", "omnirush-ai":
+			base = "https://api.omnirush.ai/v1"
+		default:
+			return usageResult{}, false
+		}
+	}
+
+	base = strings.TrimSuffix(base, "/chat/completions")
+	base = strings.TrimSuffix(base, "/completions")
+	base = strings.TrimRight(base, "/")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + strings.TrimSpace(apiKey),
+		"Accept":        "application/json",
+	}
+
+	probePaths := []string{
+		"/user/balance",
+		"/dashboard/billing/credit_grants",
+		"/credits",
+		"/v1/credits",
+		"/user/info",
+		"/v1/dashboard/billing/credit_grants",
+		"/v1/user/balance",
+		"/v1/user/info",
+		"/billing/credit_grants",
+		"/api/v1/credits",
+	}
+
+	for _, p := range probePaths {
+		status, _, out, err := usageGet(ctx, base+p, headers)
+		if err != nil || status < 200 || status >= 300 {
+			continue
+		}
+		data := usageJSON(out)
+		if data == nil {
+			continue
+		}
+		bal, used, cur, found := extractUniversalBalance(data)
+		if found {
+			if cur == "" {
+				cur = "USD"
+			}
+			remPct := 100.0
+			if bal+used > 0 {
+				remPct = math.Round((bal / (bal + used)) * 100)
+			}
+			return usageResult{
+				plan: provider,
+				quotas: map[string]any{
+					fmt.Sprintf("Balance (%s)", cur): map[string]any{
+						"used": used, "total": bal, "remainingPercentage": remPct,
+						"resetAt": nil, "unlimited": false, "isCreditBalance": true, "currency": cur,
+					},
+				},
+			}, true
+		}
+	}
+
+	// Try /models or /v1/models to verify active key and extract rate limits
+	modelPaths := []string{"/models", "/v1/models"}
+	for _, mp := range modelPaths {
+		status, respHeaders, _, err := usageGet(ctx, base+mp, headers)
+		if err == nil && status >= 200 && status < 300 {
+			quotas := map[string]any{}
+			if remReqStr := respHeaders.Get("x-ratelimit-remaining-requests"); remReqStr != "" {
+				remReq, _ := strconv.ParseFloat(remReqStr, 64)
+				limitReq, _ := strconv.ParseFloat(respHeaders.Get("x-ratelimit-limit-requests"), 64)
+				remPct := 100.0
+				if limitReq > 0 {
+					remPct = math.Round((remReq / limitReq) * 100)
+				}
+				quotas["Requests (RPM)"] = map[string]any{
+					"used": math.Max(0, limitReq-remReq), "total": limitReq, "remainingPercentage": remPct,
+					"resetAt": nil, "unlimited": false,
+				}
+			}
+			if remTokStr := respHeaders.Get("x-ratelimit-remaining-tokens"); remTokStr != "" {
+				remTok, _ := strconv.ParseFloat(remTokStr, 64)
+				limitTok, _ := strconv.ParseFloat(respHeaders.Get("x-ratelimit-limit-tokens"), 64)
+				remPct := 100.0
+				if limitTok > 0 {
+					remPct = math.Round((remTok / limitTok) * 100)
+				}
+				quotas["Tokens (TPM)"] = map[string]any{
+					"used": math.Max(0, limitTok-remTok), "total": limitTok, "remainingPercentage": remPct,
+					"resetAt": nil, "unlimited": false,
+				}
+			}
+			if len(quotas) > 0 {
+				return usageResult{plan: provider, quotas: quotas}, true
+			}
+			return usageResult{
+				plan: provider,
+				quotas: map[string]any{
+					"Active": map[string]any{
+						"used": 0, "total": 0, "remainingPercentage": 100.0,
+						"resetAt": nil, "unlimited": true, "isCreditBalance": false,
+						"displayName": "API Key Active & Verified",
+					},
+				},
+			}, true
+		}
+	}
+
+	return usageResult{}, false
 }
 
 // ---------- groq: rate-limit headers on GET /openai/v1/models ----------
