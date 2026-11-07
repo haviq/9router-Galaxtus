@@ -1297,6 +1297,21 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     ]
   },
   {
+    "id": "river",
+    "name": "River",
+    "category": "apikey",
+    "alias": "rv",
+    "color": "#06B6D4",
+    "icon": "waves",
+    "website": "https://modelriver.com",
+    "notice": {"text":"River / ModelRiver unified gateway & inference API with model routing. Prefix: rv/<model>", "apiKeyUrl":"https://modelriver.com/dashboard"},
+    "authType": "apikey",
+    "noAuth": false,
+    "serviceKinds": [
+      "llm"
+    ]
+  },
+  {
     "id": "devin-cli",
     "name": "Devin CLI",
     "category": "free",

@@ -107,6 +107,8 @@ var ProviderAliasMap = map[string]string{
 	"qd":             "qoder",
 	"qdcn":           "qoder-cn",
 	"runway":         "runwayml",
+	"rv":             "river",
+	"modelriver":     "river",
 	"stability":      "stability-ai",
 	"tg":             "together",
 	"vali":           "volcengine-ark",

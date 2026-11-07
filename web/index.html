@@ -15,6 +15,10 @@
     <title>9router Galactus - High-Throughput AI Gateway</title>
     <script>
       (function() {
+        try {
+          localStorage.removeItem('9router_quota_cache');
+          localStorage.removeItem('9router_sidebar_saldo_open');
+        } catch(e) {}
         var t = localStorage.getItem('9router-theme') || localStorage.getItem('theme') || 'dark';
         if (t === 'dark') {
           document.documentElement.classList.add('dark');

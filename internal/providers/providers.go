@@ -450,6 +450,12 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	// River — ModelRiver AI inference router (modelriver.com)
+	"river": {
+		BaseURL:    "https://api.modelriver.com/v1/chat/completions",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	"groq": {
 		BaseURL:    "https://api.groq.com/openai/v1/chat/completions",
 		AuthHeader: "Authorization",
