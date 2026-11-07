@@ -17,6 +17,7 @@ import (
 	"9router/proxy/internal/proxy"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/oauth"
+	"9router/proxy/internal/tokenpool"
 )
 
 // Port of upstream src/app/api/providers/[id]/test/testUtils.js: a real probe
@@ -489,11 +490,16 @@ func (h *DashboardHandler) probeAPIKeyConnection(ctx context.Context, conn *mode
 	}
 
 	ctx = withProbeClient(ctx, client)
-	out := validateProviderKey(ctx, provider, cfg, data.APIKey, data.ProviderSpecificData)
+	testKey := tokenpool.FirstToken(data.APIKey)
+	out := validateProviderKey(ctx, provider, cfg, testKey, data.ProviderSpecificData)
 	if !out.supported {
 		return probeOutcome{message: "Provider test not supported"}
 	}
 	if out.valid {
+		if tokenpool.HasMultipleTokens(data.APIKey) {
+			tokens := tokenpool.ParseTokens(data.APIKey)
+			return probeOutcome{valid: true, message: fmt.Sprintf("Valid token pool (%d keys active)", len(tokens))}
+		}
 		return probeOutcome{valid: true}
 	}
 	message := out.message
@@ -536,11 +542,12 @@ func (h *DashboardHandler) probeCompatibleConnection(ctx context.Context, conn *
 			"max_tokens": 1,
 			"messages":   []map[string]string{{"role": "user", "content": "test"}},
 		})
+		testKey := tokenpool.FirstToken(data.APIKey)
 		status, _, err := connectionProbeDo(ctx, client, http.MethodPost, anthropicProbeMessagesURL(base), map[string]string{
-			"x-api-key":         data.APIKey,
+			"x-api-key":         testKey,
 			"anthropic-version": "2023-06-01",
 			"content-type":      "application/json",
-			"Authorization":     "Bearer " + data.APIKey,
+			"Authorization":     "Bearer " + testKey,
 		}, body)
 		if err != nil {
 			return probeOutcome{message: err.Error()}
@@ -548,16 +555,25 @@ func (h *DashboardHandler) probeCompatibleConnection(ctx context.Context, conn *
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
 			return probeOutcome{message: "Invalid API key or base URL"}
 		}
+		if tokenpool.HasMultipleTokens(data.APIKey) {
+			tokens := tokenpool.ParseTokens(data.APIKey)
+			return probeOutcome{valid: true, message: fmt.Sprintf("Valid token pool (%d keys active)", len(tokens))}
+		}
 		return probeOutcome{valid: true}
 	}
+	testKey := tokenpool.FirstToken(data.APIKey)
 	status, _, err := connectionProbeDo(ctx, client, http.MethodGet, base+"/models", map[string]string{
-		"Authorization": "Bearer " + data.APIKey,
+		"Authorization": "Bearer " + testKey,
 	}, nil)
 	if err != nil {
 		return probeOutcome{message: err.Error()}
 	}
 	if status < 200 || status >= 300 {
 		return probeOutcome{message: "Invalid API key or base URL"}
+	}
+	if tokenpool.HasMultipleTokens(data.APIKey) {
+		tokens := tokenpool.ParseTokens(data.APIKey)
+		return probeOutcome{valid: true, message: fmt.Sprintf("Valid token pool (%d keys active)", len(tokens))}
 	}
 	return probeOutcome{valid: true}
 }

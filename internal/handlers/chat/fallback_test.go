@@ -489,3 +489,65 @@ func TestApplyTokenSavers_HeadroomFailsOpen(t *testing.T) {
 		t.Fatalf("a dead proxy must leave the body untouched")
 	}
 }
+
+func TestTryForwardWithConnection_TokenPoolAutoFailover(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		auth := r.Header.Get("Authorization")
+		if strings.Contains(auth, "sk-key-1") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":{"message":"rate limit exceeded","code":429}}`))
+			return
+		}
+		if strings.Contains(auth, "sk-key-2") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"id":"ok","choices":[{"message":{"content":"success from key 2"}}],"usage":{"prompt_tokens":2,"completion_tokens":2}}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	database, cleanup := setupChatTestDB(t)
+	defer cleanup()
+	seedConnDB(t, database, "deepseek", "conn-pool-test", "sk-key-1, sk-key-2", srv.URL)
+
+	repo := db.NewRepo(database)
+	h := NewChatHandler(repo)
+
+	body := []byte(`{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}`)
+	rec := httptest.NewRecorder()
+	cw := newCommittedResponseWriter(rec)
+
+	err := h.tryForwardWithConnection(forwardRequestParams{
+		Ctx:          context.Background(),
+		W:            cw,
+		Provider:     "deepseek",
+		Model:        "deepseek-chat",
+		ConnectionID: "conn-pool-test",
+		ConnData: &ConnectionData{
+			APIKey:  "sk-key-1, sk-key-2",
+			BaseURL: srv.URL,
+		},
+		Body:              body,
+		IsStream:          false,
+		TranslateResponse: false,
+		Endpoint:          "/v1/chat/completions",
+	})
+
+	if err != nil {
+		t.Fatalf("expected request to succeed via token pool failover, got error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "success from key 2") {
+		t.Errorf("expected response from key 2, got: %s", rec.Body.String())
+	}
+	if attempts < 2 {
+		t.Errorf("expected at least 2 attempts (failover from key 1 to key 2), got %d", attempts)
+	}
+}

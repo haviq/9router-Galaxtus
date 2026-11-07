@@ -204,4 +204,32 @@ type failingReader struct{ err error }
 
 func (f *failingReader) Read([]byte) (int, error) { return 0, f.err }
 
+func TestPeekFirstStreamEvent_RefusalCausesUpstreamFailure(t *testing.T) {
+	// 1. Content filter refusal
+	cfStream := "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"content_filter\"}]}\n\n"
+
+	_, _, err := PeekFirstStreamEvent(context.Background(), strings.NewReader(cfStream), 0)
+	if err == nil {
+		t.Fatalf("expected stream with content_filter to be refused")
+	}
+	var ue *UpstreamError
+	if !errors.As(err, &ue) || ue.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected 502 Bad Gateway upstream error, got: %v", err)
+	}
+
+	// 2. Multi-chunk textual refusal
+	refTextStream := "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"I cannot \"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"fulfill this request.\"}}]}\n\n"
+
+	_, _, err2 := PeekFirstStreamEvent(context.Background(), strings.NewReader(refTextStream), 0)
+	if err2 == nil {
+		t.Fatalf("expected stream with model refusal text to be refused")
+	}
+	if !errors.As(err2, &ue) || ue.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected 502 Bad Gateway upstream error, got: %v", err2)
+	}
+}
+
 var _ = bytes.MinRead

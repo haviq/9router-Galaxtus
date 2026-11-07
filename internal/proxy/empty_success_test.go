@@ -76,9 +76,9 @@ func TestEmptyUpstreamError(t *testing.T) {
 			wantFail: false,
 		},
 		{
-			name:     "refusal is an answer",
+			name:     "refusal is an upstream failure triggering auto-heal",
 			body:     `{"choices":[{"message":{"content":"","refusal":"cannot help"}}]}`,
-			wantFail: false,
+			wantFail: true,
 		},
 		{
 			name:     "chat cut off by max_tokens with no text is an answer",

@@ -13,12 +13,14 @@ import (
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/dbtest"
 	"9router/proxy/internal/handlerutil"
+	"9router/proxy/internal/semanticcache"
 	"9router/proxy/internal/translator"
 	"os"
 )
 
 func setupChatTestDB(t testing.TB) (*sql.DB, func()) {
 	t.Helper()
+	semanticcache.GlobalFastCache.Clear()
 	tmpFile, err := os.CreateTemp("", "test_chat_*.sqlite")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)

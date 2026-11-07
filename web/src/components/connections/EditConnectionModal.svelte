@@ -216,7 +216,7 @@
       {#if !isOAuth}
         <div>
           <label class="block text-xs font-medium text-text-muted mb-1" for="edit-conn-key">
-            API (leave blank to keep the key on file)
+            API Key (leave blank to keep current, or enter comma/newline-separated keys for Token Pool)
           </label>
           <div class="flex gap-2">
             <input

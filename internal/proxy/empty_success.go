@@ -83,6 +83,9 @@ func EmptyUpstreamError(body []byte) error {
 	if msg := errorEnvelopeMessage(probe.Error); msg != "" {
 		return UpstreamFailure(http.StatusBadGateway, "upstream answered 200 with an error: "+msg)
 	}
+	if reason, refused := DetectRefusalInPayload(trimmed); refused {
+		return UpstreamFailure(http.StatusBadGateway, "upstream answered 200 with refusal: "+reason)
+	}
 	if reason := missingCompletion(probe); reason != "" {
 		return UpstreamFailure(http.StatusBadGateway, "upstream answered 200 without a completion: "+reason)
 	}

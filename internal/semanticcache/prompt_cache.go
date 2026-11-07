@@ -238,3 +238,19 @@ func (c *FastPromptCache) Stats() (hits int64, misses int64, count int) {
 	defer c.mu.RUnlock()
 	return c.hits, c.misses, len(c.items)
 }
+
+// Clear removes all cached items.
+func (c *FastPromptCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items = make(map[string]*CachedResponse)
+	c.hits = 0
+	c.misses = 0
+}
+
+// SetEnabled enables or disables the cache.
+func (c *FastPromptCache) SetEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.enabled = enabled
+}

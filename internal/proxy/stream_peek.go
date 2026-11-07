@@ -66,6 +66,10 @@ func PeekFirstStreamEvent(ctx context.Context, r io.Reader, maxBytes int) ([]byt
 			buf.refuse(inbandEventError(ev))
 			return false
 		}
+		if reason, refused := DetectRefusalInStream(ev.Data); refused {
+			buf.refuse(UpstreamFailure(http.StatusBadGateway, "upstream refusal: "+reason))
+			return false
+		}
 		return !buf.accept(ev)
 	})
 
@@ -90,11 +94,12 @@ func PeekFirstStreamEvent(ctx context.Context, r io.Reader, maxBytes int) ([]byt
 // peekBuffer accumulates the raw bytes the scanner consumed and records
 // whether anything a client can read has arrived yet.
 type peekBuffer struct {
-	limit    int
-	raw      bytes.Buffer
-	carried  bool
-	overflow bool
-	refusal  error
+	limit           int
+	raw             bytes.Buffer
+	carried         bool
+	overflow        bool
+	refusal         error
+	accumulatedText strings.Builder
 }
 
 // accept records one event. It reports whether the peek is finished: true as
@@ -103,6 +108,17 @@ type peekBuffer struct {
 func (b *peekBuffer) accept(ev SSEEvent) bool {
 	if b.carried {
 		return true
+	}
+	if chunk := ExtractTextChunk(ev.Data); chunk != "" {
+		b.accumulatedText.WriteString(chunk)
+		acc := b.accumulatedText.String()
+		if phrase, matched := MatchesRefusalPhrase(acc); matched {
+			b.refuse(UpstreamFailure(http.StatusBadGateway, "upstream refusal: model text refusal: "+phrase))
+			return false
+		}
+		if IsPotentialRefusalPrefix(acc) && len(CleanRefusalPreamble(acc)) < 80 {
+			return false
+		}
 	}
 	if streamEventCarriesAnswer(ev.Data) {
 		b.carried = true

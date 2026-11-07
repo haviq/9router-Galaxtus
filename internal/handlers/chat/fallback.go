@@ -10,6 +10,7 @@ import (
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/thinking"
 	"9router/proxy/internal/tokensaver"
+	"9router/proxy/internal/tokenpool"
 	"9router/proxy/internal/tracing"
 	"9router/proxy/internal/translator"
 	"9router/proxy/internal/usagetracker"
@@ -510,6 +511,19 @@ func appendBetaQuery(u string) string {
 	return u + "?beta=true"
 }
 
+func isWriterCommitted(w http.ResponseWriter) bool {
+	if w == nil {
+		return false
+	}
+	type committer interface {
+		IsCommitted() bool
+	}
+	if c, ok := w.(committer); ok {
+		return c.IsCommitted()
+	}
+	return false
+}
+
 // forwardRequestParams bundles tryForwardWithConnection inputs. Ten positional
 // params (including two adjacent bools) made call sites unreadable and
 // extension error-prone; named fields fix the call sites while the function
@@ -581,13 +595,19 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		}
 	}
 
-	apiKey := resolveProviderAuthToken(provider, connData, extractAPIKey(connData))
-	if apiKey == "" {
+	rawKey := resolveProviderAuthToken(provider, connData, extractAPIKey(connData))
+	if rawKey == "" {
 		if providerCfg.DefaultAPIKey != "" {
-			apiKey = providerCfg.DefaultAPIKey
+			rawKey = providerCfg.DefaultAPIKey
 		} else {
 			return &upstreamError{StatusCode: http.StatusUnauthorized, Body: []byte(`{"error":{"message":"no API key found","type":"auth_error","code":401}}`)}
 		}
+	}
+
+	pool := tokenpool.GetGlobalManager().GetPool(connectionID, rawKey)
+	apiKey, totalTokens, availTokens := pool.GetNext()
+	if apiKey == "" {
+		apiKey = rawKey
 	}
 
 	if connectionID != "" {
@@ -1056,6 +1076,78 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 				fwdErr = h.forwardRequest(ctx, w, providerCfg, apiKey, pipedBody, isStream, translateResponse, metrics, httpClient, provider)
 			}
 		}
+	}
+
+	// Token pool automatic rotation & cooldown quarantine
+	if errors.As(fwdErr, &ue) && pool.HasMultiple() && !isWriterCommitted(f.W) {
+		if ue.StatusCode == http.StatusTooManyRequests || ue.StatusCode == http.StatusUnauthorized || ue.StatusCode == http.StatusForbidden {
+			cooldown := tokenpool.DefaultCooldown
+			if ue.StatusCode == http.StatusUnauthorized || ue.StatusCode == http.StatusForbidden {
+				cooldown = tokenpool.AuthFailureCooldown
+			}
+			pool.Quarantine(apiKey, cooldown)
+			log.Warn("tokenpool", "token quarantined, retrying with next key in pool",
+				"conn", connectionID, "status", ue.StatusCode, "failedKey", tokenpool.MaskToken(apiKey), "total", totalTokens, "active", availTokens-1)
+
+			maxRetries := min(totalTokens-1, 3)
+			for retryCount := 0; retryCount < maxRetries; retryCount++ {
+				nextKey, _, remaining := pool.GetNext()
+				if nextKey == "" || nextKey == apiKey {
+					break
+				}
+				apiKey = NormalizeProviderToken(provider, nextKey)
+				var retryErr error
+				if exec := executor.Get(provider); exec != nil {
+					retryReq := &executor.Request{
+						Ctx:            ctx,
+						Client:         httpClient,
+						Config:         providerCfg,
+						Provider:       provider,
+						APIKey:         apiKey,
+						Body:           pipedBody,
+						IsStream:       isStream,
+						ClaudeClient:   endpoint == "/v1/v1/messages" || endpoint == "/v1/messages",
+						TranslateResp:  translateResponse,
+						ConnectionID:   connectionID,
+						SessionID:      sessionID,
+						ToolNameMap:    claudeToolMap,
+						UpstreamClaude: upstreamClaude && !claudeNative,
+						ResponseBuf:    &metrics.ResponseBuf,
+						StartTime:      start,
+						TTFT:           &metrics.TTFT,
+					}
+					if connData != nil && len(connData.ProviderSpecificData) > 0 {
+						retryReq.ConnData = connData.ProviderSpecificData
+					}
+					if h.Repo != nil {
+						retryReq.Leases = h.Repo
+					}
+					retryErr = exec(w, retryReq)
+					retryReq.Release()
+				} else if providerCfg.IsGeminiNative() {
+					retryErr = h.forwardGeminiNativeRequest(ctx, w, provider, providerCfg, apiKey, connectionID, pipedBody, isStream, translateResponse, metrics, httpClient)
+				} else {
+					retryErr = h.forwardRequest(ctx, w, providerCfg, apiKey, pipedBody, isStream, translateResponse, metrics, httpClient, provider)
+				}
+				retryErr = guardrailStreamOutcome(gtap, retryErr)
+				if retryErr == nil {
+					log.Info("tokenpool", "request recovered via token pool rotation", "conn", connectionID, "key", tokenpool.MaskToken(nextKey), "remainingActive", remaining)
+					pool.ReportSuccess(nextKey)
+					fwdErr = nil
+					break
+				}
+				var retryUe *upstreamError
+				if errors.As(retryErr, &retryUe) && (retryUe.StatusCode == http.StatusTooManyRequests || retryUe.StatusCode == http.StatusUnauthorized || retryUe.StatusCode == http.StatusForbidden) {
+					pool.Quarantine(nextKey, cooldown)
+					fwdErr = retryErr
+					continue
+				}
+				fwdErr = retryErr
+				break
+			}
+		}
+	} else if fwdErr == nil && pool.HasMultiple() {
+		pool.ReportSuccess(apiKey)
 	}
 
 	// Codex answers an exhausted 5h/7d window with a 429 carrying

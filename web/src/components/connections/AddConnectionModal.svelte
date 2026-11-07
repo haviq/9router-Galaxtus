@@ -577,7 +577,7 @@
               <div class="flex gap-2">
                 <div class="flex-1">
                   <label for="connApiKey" class={labelCls}>
-                    {credentialLabel}{#if credentialIsOptional}<span class="text-text-muted text-xs font-normal"> (optional in profile mode)</span>{/if}
+                    {credentialLabel}{#if credentialIsOptional}<span class="text-text-muted text-xs font-normal"> (optional in profile mode)</span>{/if}{#if !isCookie}<span class="text-text-muted/80 text-xs font-normal ml-1"> (supports multi-key token pool via comma/newline)</span>{/if}
                   </label>
                   <input
                     id="connApiKey"
