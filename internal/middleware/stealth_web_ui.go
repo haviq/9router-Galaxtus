@@ -37,6 +37,15 @@ func StealthWebUIGate(repo *db.Repo, next http.Handler) http.Handler {
 			return
 		}
 
+		// Admitted: direct local developer on loopback with no external proxy headers
+		isDirectLocal := (strings.HasPrefix(r.Host, "localhost") || strings.HasPrefix(r.Host, "127.0.0.1") || strings.HasPrefix(r.Host, "[::1]")) &&
+			r.Header.Get("X-Forwarded-For") == "" &&
+			r.Header.Get("CF-Connecting-IP") == ""
+		if isDirectLocal {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		bypassKey := strings.TrimSpace(settings.StealthBypassKey)
 
 		// Check bypass cookie
